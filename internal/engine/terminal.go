@@ -359,6 +359,9 @@ func (rt *Runtime) ProcessEvents() error {
 }
 
 func (rt *Runtime) HandleInput(data []byte) []ParsedInput {
+	if rt.Stopped() {
+		return nil
+	}
 	now := time.Now()
 	rt.lifecycleMu.Lock()
 	entered := rt.entered
@@ -370,6 +373,9 @@ func (rt *Runtime) HandleInput(data []byte) []ParsedInput {
 	rt.cancelIncompleteTimer()
 	inputs := rt.Parser.Feed(data)
 	for _, in := range inputs {
+		if rt.Stopped() {
+			break
+		}
 		rt.dispatch(in)
 	}
 	rt.scheduleIncompleteFlush()
@@ -387,7 +393,7 @@ func (rt *Runtime) cancelIncompleteTimer() {
 }
 
 func (rt *Runtime) scheduleIncompleteFlush() {
-	if rt == nil || rt.Parser == nil || !rt.Parser.Pending() {
+	if rt == nil || rt.Parser == nil || rt.Stopped() || !rt.Parser.Pending() {
 		return
 	}
 	d := rt.EscapeTimeout
@@ -419,6 +425,9 @@ func (rt *Runtime) flushIncompleteInput() []ParsedInput {
 	rt.cancelIncompleteTimer()
 	inputs := rt.Parser.Flush()
 	for _, in := range inputs {
+		if rt.Stopped() {
+			break
+		}
 		rt.dispatch(in)
 	}
 	return inputs

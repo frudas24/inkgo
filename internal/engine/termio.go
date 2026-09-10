@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 const (
@@ -125,7 +127,22 @@ func EraseToStartOfLine() string   { return CSI(1, "K") }
 func EraseToEndOfScreen() string   { return CSI("J") }
 func EraseToStartOfScreen() string { return CSI(1, "J") }
 
+// safeHyperlinkURL rejects controls instead of allowing a URL to terminate
+// OSC-8 and emit another terminal command. Keep ordinary Unicode URLs intact.
+func safeHyperlinkURL(url string) string {
+	if !utf8.ValidString(url) {
+		return ""
+	}
+	for _, r := range url {
+		if unicode.IsControl(r) {
+			return ""
+		}
+	}
+	return url
+}
+
 func Hyperlink(url, text string) string {
+	url = safeHyperlinkURL(url)
 	if url == "" {
 		return text
 	}

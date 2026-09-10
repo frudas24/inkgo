@@ -88,11 +88,15 @@ func (q *TerminalQuerier) Flush() <-chan struct{} {
 }
 
 // OnResponse routes one parsed response into the first matching pending query,
-// otherwise a DA1 response completes the first sentinel barrier.
+// in the current batch. A DA1 response completes its sentinel barrier before
+// any query in a later batch can consume that response.
 func (q *TerminalQuerier) OnResponse(r TerminalResponse) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	for i, p := range q.pending {
+		if p.sentinel != nil {
+			break
+		}
 		if p.query != nil && p.query.Match != nil && p.query.Match(r) {
 			copy(q.pending[i:], q.pending[i+1:])
 			q.pending[len(q.pending)-1] = nil

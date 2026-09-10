@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- reject terminal controls and invalid UTF-8 in emitted hyperlink URLs while preserving Unicode links;
+- stop dispatching the current input batch immediately after `Stop`;
+- match terminal-query responses only within the batch before the first pending barrier;
+
 - release lifecycle locks before resume callbacks; repaint after reopening and after failed frame writes;
 - flush pending Escape and partial-paste input on EOF;
 - validate manifest inventory as well as hashes, including new non-ignored files;

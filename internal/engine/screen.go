@@ -329,6 +329,10 @@ func DiffScreens(prev, next *Screen) string {
 		if link == lastLink {
 			return
 		}
+		link = safeHyperlinkURL(link)
+		if link == lastLink {
+			return
+		}
 		if lastLink != "" {
 			b.WriteString(OSC(8, "", ""))
 		}
@@ -531,6 +535,10 @@ func encodeCellRange(s *Screen, y, x1, x2 int) string {
 	haveStyle := false
 	link := ""
 	setLink := func(v string) {
+		if v == link {
+			return
+		}
+		v = safeHyperlinkURL(v)
 		if v == link {
 			return
 		}
