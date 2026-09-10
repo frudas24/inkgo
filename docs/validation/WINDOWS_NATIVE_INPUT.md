@@ -1,6 +1,6 @@
 # Windows native console input / resize validation
 
-Baseline: post-v0.1.6 hardening checkpoint. This remains an **Unreleased** development tree until promoted to a new immutable version.
+Baseline: post-v0.1.6 hardening checkpoint. Released as **v0.1.7** after the interactive Windows console check below was confirmed on a real Windows Terminal host.
 
 ## Change
 

@@ -1,6 +1,6 @@
 # Release checklist
 
-The latest published release is **v0.1.6**. This document is the checklist for
+The latest published release is **v0.1.7**. This document is the checklist for
 preparing the **next** release; do not reuse an already-published tag for new
 source changes.
 
@@ -40,18 +40,18 @@ current stable Go toolchain; policy checks remain on the minimum supported line.
 ## Tag
 
 After the validated tree is committed to `main`, choose a new immutable semantic
-version (for example `v0.1.7`) and create an annotated tag:
+version (for example `v0.1.8`) and create an annotated tag:
 
 ```bash
-git tag -a v0.1.7 -m "inkgo v0.1.7"
-git push origin v0.1.7
+git tag -a v0.1.8 -m "inkgo v0.1.8"
+git push origin v0.1.8
 ```
 
 Then verify the exact version you published:
 
 ```bash
-go list -m github.com/frudas24/inkgo@v0.1.7
-go get github.com/frudas24/inkgo@v0.1.7
+go list -m github.com/frudas24/inkgo@v0.1.8
+go get github.com/frudas24/inkgo@v0.1.8
 ```
 
 ## Suggested GitHub metadata

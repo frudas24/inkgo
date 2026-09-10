@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.1.7 — native Windows console input and hot-path hardening
+
 - the `terminal-smoke` example echoes every key it receives (count, name, text, sequence, modifiers), so an unresponsive-looking demo can be told apart from a genuinely broken input path;
 - replace Windows' 60 ms console-size polling with an event-driven `ReadConsoleInputW` pump owned exclusively by `Runtime.Run`; `WINDOW_BUFFER_SIZE_EVENT` now feeds the existing coalesced resize queue directly, while `WaitForMultipleObjects` waits on console input plus a stop event with no periodic timer;
 - preserve the full Windows console input stream while taking native ownership: `KEY_EVENT`, `MOUSE_EVENT` and `FOCUS_EVENT` records are translated into the existing parser-compatible VT stream, including UTF-16 surrogate pairs, AltGr, repeat counts and viewport-relative mouse coordinates;
