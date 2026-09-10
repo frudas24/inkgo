@@ -46,17 +46,25 @@ func TestSmokeTabFocusIsVisible(t *testing.T) {
 	unfocused := screen()
 	rt.HandleInput([]byte("\t"))
 	first := screen()
-	if first == unfocused || !strings.Contains(first, "[ button A ]") {
+	if first == unfocused || !strings.Contains(first, "[ button A ]") || !strings.Contains(first, "Focus: button A") {
 		t.Fatalf("Tab did not visibly focus the first button:\n%s", first)
 	}
 	rt.HandleInput([]byte("\t"))
 	second := screen()
-	if second == first || !strings.Contains(second, "[ button B ]") {
-		t.Fatalf("Tab did not visibly move focus to the second button:\n%s", second)
+	if !strings.Contains(second, "[ button B ]") {
+		t.Fatalf("Tab did not move focus forward to the second button:\n%s", second)
 	}
+	rt.HandleInput([]byte("\t"))
+	third := screen()
+	if !strings.Contains(third, "[ button C ]") {
+		t.Fatalf("Tab did not move focus forward to the third button:\n%s", third)
+	}
+	// From the last button, Shift+Tab must step back to the second; a plain Tab
+	// would wrap around to the first, so this distinguishes the direction.
 	rt.HandleInput([]byte("\x1b[Z"))
-	if back := screen(); back != first {
-		t.Fatalf("Shift+Tab did not return focus to the first button:\n%s", back)
+	back := screen()
+	if !strings.Contains(back, "[ button B ]") || strings.Contains(back, "[ button C ]") {
+		t.Fatalf("Shift+Tab did not move focus backwards:\n%s", back)
 	}
 }
 

@@ -1,6 +1,6 @@
 43f551ffe24eb4c7803887a96a0f91c1a9c52471c4a0da3d9961582f0dca8155  ./.github/workflows/ci.yml
 9f4530ad60f958569739cc1bf1af6c95d49db15d85edb3e15c2b7ffab7f3b65c  ./.gitignore
-e15280b5573eba1fbfdf663da4af299d0c8f2a219a977cbd901df6739edb5517  ./CHANGELOG.md
+47a8d03a2d1493b3dd87e303a5b48a7d24ffcb43bd730fdfca1c6a16258c9bc7  ./CHANGELOG.md
 54b1f9690416de3e1908689a2d80d8c08ed3942fdf0bd223d3494b008783469e  ./LICENSE
 cadeb596498e4cf6995b4b267b54640714c696b67869d8116ff21510131bd47f  ./README.md
 de12e5ec6120e166877c74de024c1b01a9fefde411dd1888ae576829c2bc236b  ./THIRD_PARTY_NOTICES.md
@@ -17,8 +17,8 @@ c8df530eb968a915eeebcebb3936221cfcebdf0baaf126d94da0c4afbbc81010  ./docs/SOURCE_
 01085570493c29d4932748646e1fda7ffbe11da88b71995d923eac468b5b8e91  ./docs/validation/ROUND5.md
 46b184134c566bacf7a53efe18ddbae0b3f1a3939a7a4d2fee0e8fc0d06b2dc4  ./examples/embed/main.go
 9e319217a9aef123d10f86c4af31000bda09c7d1da416d85e50901691789ebb6  ./examples/fullscreen/main.go
-cb5e0d67d8f361b1804fb0d3c6ab93007691e0496c26885ad0712b07870ff675  ./examples/terminal-smoke/main.go
-8ed5cf2e50f0fbd46589df23a18d7abbd83c923f268d1f49e56ebd5bdaf2fb9d  ./examples/terminal-smoke/main_test.go
+e2ef853d00de54cdfbd50f7e974605f424c009fb16d5bbef0cec29d5acbc863c  ./examples/terminal-smoke/main.go
+499314a3de6663f2ee46fcff1ceba0a5cc3f7ea569b4a3816d8b05524122b117  ./examples/terminal-smoke/main_test.go
 18f247ea174b27a62389ef2116f707e7b93522aec6e268e17e1bcbfa1c642a76  ./go.mod
 fe2226289605d24d46fd46ea7a70309229409326614f65219d3eb521ef6dacb1  ./input/input.go
 d5c9101cc57ebebd3f168ef5698a741693f7b3339a71b522d597f5315eb19f03  ./input/input_test.go

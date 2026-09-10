@@ -4,7 +4,7 @@
 
 - resize no longer re-enters or clears the alternate screen on every `SIGWINCH`; the runtime coalesces signal bursts into one UI event and re-reads the PTY size over a bounded retry window, so a size that lags the signal (ConPTY/WSL) is picked up without another key press or input;
 - the `terminal-smoke` example exits on `q`, Ctrl+C or Escape and shows pasted text, making the interactive smoke escapable and paste observable;
-- the `terminal-smoke` example renders a visible focus indicator on two focusable buttons, so `Tab`/`Shift+Tab` traversal is observable rather than silent;
+- the `terminal-smoke` example renders a visible focus indicator plus a focus readout across three focusable buttons, so the `Tab`/`Shift+Tab` traversal direction is observable rather than silent (with two buttons both keys land on the same node);
 
 ## v0.1.4 — runtime, terminal and clock boundary hardening
 

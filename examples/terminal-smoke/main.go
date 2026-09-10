@@ -38,10 +38,13 @@ func newSmokeRuntime(in io.Reader, out io.Writer, size ink.Size) *ink.Runtime {
 	status := ink.Text(statusText(size.Width, size.Height), ink.TextStyle{Bold: true})
 	footer := ink.Text(fmt.Sprintf("Viewport bottom · %dx%d", size.Width, size.Height))
 	pasted := ink.Text("Paste: waiting for text")
+	focusLabel := ink.Text("Focus: (none)", ink.TextStyle{Bold: true})
 	// A plain Button tracks focus but renders no indicator, so the demo uses the
-	// render-prop form to make Tab/Shift+Tab traversal observable.
+	// render-prop form to make Tab/Shift+Tab traversal observable. Three buttons
+	// are required: with two, Tab and Shift+Tab land on the same node and the
+	// traversal direction cannot be told apart.
 	focusButton := func(label string) *ink.Node {
-		return ink.ButtonWithState(ink.Style{}, func() {}, func(s ink.ButtonState) []*ink.Node {
+		btn := ink.ButtonWithState(ink.Style{}, func() {}, func(s ink.ButtonState) []*ink.Node {
 			text := "  " + label + "  "
 			style := ink.TextStyle{}
 			if s.Focused {
@@ -50,6 +53,10 @@ func newSmokeRuntime(in io.Reader, out io.Writer, size ink.Size) *ink.Runtime {
 			}
 			return []*ink.Node{ink.Text(text, style)}
 		})
+		btn.SetHandlers(ink.EventHandlers{
+			OnFocus: func(*ink.FocusEvent) { focusLabel.SetText("Focus: " + label) },
+		})
+		return btn
 	}
 	root := ink.Root(ink.AlternateScreen(
 		ink.Box(ink.Style{FlexDirection: ink.Column, Width: ink.Percent(100), Height: ink.Percent(100), Padding: ink.I(1)},
@@ -57,6 +64,8 @@ func newSmokeRuntime(in io.Reader, out io.Writer, size ink.Size) *ink.Runtime {
 			ink.Text("Move the mouse, resize the terminal, paste text, and press Tab/Shift+Tab between the buttons."),
 			focusButton("button A"),
 			focusButton("button B"),
+			focusButton("button C"),
+			focusLabel,
 			ink.Box(ink.Style{Height: ink.Cells(4), FlexShrink: ink.F(0), Overflow: ink.OverflowHidden}, pasted),
 			ink.Spacer(),
 			footer,
