@@ -1,6 +1,6 @@
 # Release checklist
 
-The current source version is **v0.1.5**. For a new release, update `VERSION`, `version.go`, and the version references below before tagging. Publishing the remote Git tag is a repository action and is intentionally separate from building the source ZIP.
+The current source version is **v0.1.6**. For a new release, update `VERSION`, `version.go`, and the version references below before tagging. Publishing the remote Git tag is a repository action and is intentionally separate from building the source ZIP.
 
 ## Before tagging
 
@@ -29,15 +29,15 @@ Run the final interactive smoke on at least one real Windows Terminal/PowerShell
 After the validated tree is committed to `main`:
 
 ```bash
-git tag -a v0.1.5 -m "inkgo v0.1.5"
-git push origin v0.1.5
+git tag -a v0.1.6 -m "inkgo v0.1.6"
+git push origin v0.1.6
 ```
 
 Then verify:
 
 ```bash
-go list -m github.com/frudas24/inkgo@v0.1.5
-go get github.com/frudas24/inkgo@v0.1.5
+go list -m github.com/frudas24/inkgo@v0.1.6
+go get github.com/frudas24/inkgo@v0.1.6
 ```
 
 ## Suggested GitHub metadata
@@ -54,4 +54,4 @@ Stars are a community metric, not a release-readiness requirement.
 
 ## License / provenance
 
-The supplied TypeScript source archive did not contain a license file. Before publishing a public `v0.1.5` tag, verify the licensing/provenance obligations of the upstream/customized Ink source and add the appropriate license/attribution. This source tree intentionally does not invent a license on the author's behalf.
+The supplied TypeScript source archive did not contain a license file. Before publishing a public `v0.1.6` tag, verify the licensing/provenance obligations of the upstream/customized Ink source and add the appropriate license/attribution. This source tree intentionally does not invent a license on the author's behalf.

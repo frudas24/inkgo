@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.1.6 — Windows-flaky clock assertion fix
+
+- fix a Windows-only flaky assertion in `TestNowUsesTickTimestampOnlyDuringCallbacks`: the time since clock start can still read as zero immediately after a tick, which made a live `Now()` indistinguishable from a frozen one; the assertion now sleeps past the clock resolution and no longer fails the Windows CI job. No library behavior changed.
+
 ## v0.1.5 — resize recovery and interactive smoke
 
 - resize no longer re-enters or clears the alternate screen on every `SIGWINCH`; the runtime coalesces signal bursts into one UI event and re-reads the PTY size over a bounded retry window, so a size that lags the signal (ConPTY/WSL) is picked up without another key press or input;
