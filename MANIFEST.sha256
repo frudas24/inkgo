@@ -1,4 +1,4 @@
-4592521daa0b044e0386d7a54b9b7a2d431d3cf5c872ea9559fe9f57e7848274  ./.github/workflows/ci.yml
+1ce1626b55e88afd69af62c5756b56f29ed7812afd74c6ba2d6e077fef222982  ./.github/workflows/ci.yml
 9f4530ad60f958569739cc1bf1af6c95d49db15d85edb3e15c2b7ffab7f3b65c  ./.gitignore
 913818f3732eb512dedbc4f72dae97f7decef0e0f732a5fb744a35c44da25669  ./CHANGELOG.md
 54b1f9690416de3e1908689a2d80d8c08ed3942fdf0bd223d3494b008783469e  ./LICENSE
@@ -71,7 +71,7 @@ e80d39c2f99aa8f49d0aa55be9cd17e6b9fce4e714d6069b9d679d5e21ff8ac4  ./internal/eng
 be3f6c025c62dc87246d468cc8cf167ce6d07cb9910cb59681e005dc8128ada5  ./internal/engine/stress_round5_test.go
 126c3a1501caca1c0eab58ce8e9e291cd56d57057a9e50dc3217163ca36a2099  ./internal/engine/style.go
 357d7c57de028139118a36c936cae180628894d0d62e2ca100b7becd967cf260  ./internal/engine/tabstops.go
-9b6b6786a3d047818b1dd0994f2e15cdbaec033ce789b9d354f737ff3b8b8c8a  ./internal/engine/terminal.go
+4f82998fe58d78331444aa8a5976a7281b9f4779bdf2b5e168a23445825d2d71  ./internal/engine/terminal.go
 583f17b5db4c6d44dc4adadd2119164bc23a725fc2de234997a979249a34c78f  ./internal/engine/terminal_boundary_test.go
 20e5dcde86948aad1a7ec7ed261dc50c79083c06943ecb2f8faa017ab76ada39  ./internal/engine/terminal_darwin.go
 1ad05090c86172a23ab70fcf33880c230038448a2204f6c1cebcdc2fa2f4fd03  ./internal/engine/terminal_linux.go
@@ -120,6 +120,12 @@ aa673cdfda492ce49d3d80010dbcb0359ca2409b2f04a5d2340c8e358450c3f2  ./scripts/mani
 d2bdc19b3c62556141d0962ca77e09dcec5a807ebee6f3999babca4fcf7d0db2  ./selection/selection_test.go
 2f567849afe6067921675d7ff56a20790cacc5d400e3f6127c5bb4dd53d7d7e4  ./terminal/terminal.go
 af291da959f1f829c722ed215ec46f890fc371cc0fa27c7d8a9bb4702d011bd6  ./terminal/terminal_test.go
+33bb9a4fb60bd6a23144a904da4977dbbc743e2d13ddedae0e7ae289095444f3  ./test/pty/README.md
+ab21497d35cd9a8e9613871ee396aa645ee1a76b80a7123f6424142035508f6a  ./test/pty/fixtures/app/main.go
+dfac0d3990a6901453493e9c1850543095f119ea9437c3b877eb16443ccf602d  ./test/pty/go.mod
+4af410f51c56d1e7fef6780d80f0ea6a90fee4ee6b869fb14815c88dedc62830  ./test/pty/go.sum
+6345e673347d888e9583a2b67265f33485b9a4cacf57b3620c12665e4a405546  ./test/pty/harness/harness.go
+94cd38aab900a6478aef146e9dff4223e405e8066e8115a19467d2bdd6b37209  ./test/pty/pty_integration_test.go
 19f603a18fe8275dd41bdc1bde2b8068d8da109963d843754a0614e636cba9a9  ./text/text.go
 a735ecaa12e68e0ddf3df0006fba90a11e3ed0c0e6fc2b469f865543464f7e17  ./text/text_test.go
 4c62af9683b91029cbca4fd0752430dc7f0e04e2798cd6a9541e09a4a03e4489  ./version.go

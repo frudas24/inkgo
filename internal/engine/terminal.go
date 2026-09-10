@@ -1091,12 +1091,16 @@ func (rt *Runtime) Run() error {
 	if rt.In == nil || rt.Out == nil {
 		return errors.New("runtime requires input and output")
 	}
+	// Install signal handlers before Start. Start performs the initial render;
+	// a SIGWINCH that lands between that render and loop setup must be queued,
+	// otherwise a resize immediately after first paint can be lost until some
+	// unrelated input triggers the next render.
+	removeSignals := installRuntimeSignalHandlers(rt)
+	defer removeSignals()
 	if err := rt.Start(); err != nil {
 		return err
 	}
 	defer rt.Close()
-	removeSignals := installRuntimeSignalHandlers(rt)
-	defer removeSignals()
 	// Keep at most one outstanding read. On a real Windows console, the native
 	// ReadConsoleInputW pump owns the INPUT_RECORD stream so resize events cannot
 	// race or compete with key reads. Pipes/PTYs and all non-Windows platforms
