@@ -97,7 +97,7 @@ func (p *InputParser) Flush() []ParsedInput {
 
 func (p *InputParser) consume(flush bool) []ParsedInput {
 	var out []ParsedInput
-	for len(p.buffer) > 0 {
+	for len(p.buffer) > 0 || (flush && p.inPaste) {
 		if p.inPaste {
 			if i := strings.Index(p.buffer, pasteEnd); i >= 0 {
 				p.paste.WriteString(p.buffer[:i])

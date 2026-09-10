@@ -12,15 +12,16 @@ import (
 type Clock struct {
 	mu sync.Mutex
 
-	baseInterval time.Duration
-	interval     time.Duration
-	start        time.Time
-	tickTime     time.Duration
-	timer        *time.Timer
-	ticking      bool
-	closed       bool
-	nextID       uint64
-	subscribers  map[uint64]clockSubscriber
+	baseInterval    time.Duration
+	interval        time.Duration
+	start           time.Time
+	tickTime        time.Duration
+	timer           *time.Timer
+	timerGeneration uint64
+	ticking         bool
+	closed          bool
+	nextID          uint64
+	subscribers     map[uint64]clockSubscriber
 }
 
 type clockSubscriber struct {
@@ -50,7 +51,7 @@ func (c *Clock) Now() time.Duration {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.ensureStartedLocked()
-	if c.timer != nil && c.tickTime > 0 {
+	if c.ticking {
 		return c.tickTime
 	}
 	return time.Since(c.start)
@@ -136,10 +137,7 @@ func (c *Clock) Close() {
 	}
 	c.mu.Lock()
 	c.closed = true
-	if c.timer != nil {
-		c.timer.Stop()
-		c.timer = nil
-	}
+	c.cancelTimerLocked()
 	clear(c.subscribers)
 	c.mu.Unlock()
 }
@@ -161,10 +159,7 @@ func (c *Clock) hasKeepAliveLocked() bool {
 
 func (c *Clock) updateTimerLocked() {
 	if c.closed || !c.hasKeepAliveLocked() {
-		if c.timer != nil {
-			c.timer.Stop()
-			c.timer = nil
-		}
+		c.cancelTimerLocked()
 		return
 	}
 	c.restartTimerLocked()
@@ -174,17 +169,24 @@ func (c *Clock) restartTimerLocked() {
 	if c.closed || c.ticking || !c.hasKeepAliveLocked() {
 		return
 	}
-	if c.timer != nil {
-		c.timer.Stop()
-	}
-	interval := c.interval
-	c.timer = time.AfterFunc(interval, c.tick)
+	c.cancelTimerLocked()
+	generation := c.timerGeneration
+	c.timer = time.AfterFunc(c.interval, func() { c.tick(generation) })
 }
 
-func (c *Clock) tick() {
-	c.mu.Lock()
-	if c.closed || !c.hasKeepAliveLocked() {
+// Timer.Stop cannot cancel a callback that has already started waiting for mu.
+// Invalidate its generation so it cannot run or overwrite replacement state.
+func (c *Clock) cancelTimerLocked() {
+	c.timerGeneration++
+	if c.timer != nil {
+		c.timer.Stop()
 		c.timer = nil
+	}
+}
+
+func (c *Clock) tick(generation uint64) {
+	c.mu.Lock()
+	if generation != c.timerGeneration || c.closed || c.ticking || !c.hasKeepAliveLocked() {
 		c.mu.Unlock()
 		return
 	}
