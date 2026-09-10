@@ -9,10 +9,10 @@ The library provides concrete `*Node` trees, flex layout, Unicode-aware cell ren
 Requires **Go 1.23+**.
 
 ```bash
-go get github.com/frudas24/inkgo@v0.1.3
+go get github.com/frudas24/inkgo@v0.1.4
 ```
 
-The source version is `v0.1.3`. The Git tag is the authoritative published version; until that tag is published, consumers of a development checkout can use a local `replace` directive or the repository branch they intentionally pin.
+The source version is `v0.1.4`. The Git tag is the authoritative published version; until that tag is published, consumers of a development checkout can use a local `replace` directive or the repository branch they intentionally pin.
 
 **External Go dependencies: zero.** `go list -m all` contains only `github.com/frudas24/inkgo`.
 
@@ -172,7 +172,7 @@ go run ./examples/terminal-smoke
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — ownership and package boundaries
 - [`docs/MIGRATION.md`](docs/MIGRATION.md) — mapping from the TypeScript/React model
 - [`docs/STABILITY.md`](docs/STABILITY.md) — public API/version policy
-- [`docs/RELEASE.md`](docs/RELEASE.md) — `v0.1.3` publication checklist and repository metadata
+- [`docs/RELEASE.md`](docs/RELEASE.md) — `v0.1.4` publication checklist and repository metadata
 - [`docs/PORT_STATUS.md`](docs/PORT_STATUS.md) — remaining parity boundary
 - [`docs/validation/ROUND5.md`](docs/validation/ROUND5.md) — production-hardening evidence
 

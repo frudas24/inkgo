@@ -1,6 +1,6 @@
 # API stability
 
-The source tree is at version `v0.1.3`.
+The source tree is at version `v0.1.4`.
 
 ## Public surface
 

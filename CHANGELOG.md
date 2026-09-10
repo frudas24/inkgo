@@ -2,10 +2,11 @@
 
 ## Unreleased
 
+## v0.1.4 — runtime, terminal and clock boundary hardening
+
 - invalidate replaced clock timers to prevent overlapping callbacks; keep `Now()` consistent within an active tick;
 - retry failed output through both `Renderer.WriteFrame` and `Runtime.Render`;
 - leave paste mode when flushing an empty incomplete paste, preserving subsequent keyboard input;
-
 - reject terminal controls and invalid UTF-8 in emitted hyperlink URLs while preserving Unicode links;
 - stop dispatching the current input batch immediately after `Stop`;
 - match terminal-query responses only within the batch before the first pending barrier;
