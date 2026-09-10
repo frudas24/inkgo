@@ -8,7 +8,7 @@ import "time"
 // through a generic io.Reader, so it cannot observe console resize events
 // directly. Poll the console size instead; queueResize coalesces and the
 // renderer diffs, so an idle window stays quiet.
-const windowsResizePollInterval = 100 * time.Millisecond
+const windowsResizePollInterval = 60 * time.Millisecond
 
 func installRuntimeSignalHandlers(rt *Runtime) func() {
 	if rt == nil || rt.Terminal == nil {
