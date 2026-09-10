@@ -11,6 +11,9 @@ func TestWidthsGraphemesAndANSI(t *testing.T) {
 	if StringWidth("abc") != 3 || StringWidth("界") != 2 || StringWidth("e\u0301") != 1 {
 		t.Fatal("width")
 	}
+	if StringWidth("a\tb") != 2 {
+		t.Fatal("tabs are controls until ExpandTabs")
+	}
 	if StringWidth("\x1b[31mred\x1b[0m") != 3 {
 		t.Fatal("ansi width")
 	}
@@ -111,5 +114,125 @@ func TestWrapUsesEightColumnTabsAndNormalizesCRLF(t *testing.T) {
 	}
 	if got := WrapText("a\r\nb", 8, core.TextWrapWrap); got != "a\nb" {
 		t.Fatalf("CRLF normalize=%q", got)
+	}
+}
+
+func TestMalformedUTF8AndIncompleteEscapeStayConsistent(t *testing.T) {
+	invalid := string([]byte{'a', 0xff, 'b'})
+	if got := StripANSI(invalid); got != "ab" {
+		t.Fatalf("StripANSI malformed UTF-8 = %q", got)
+	}
+	if got := StringWidth(invalid); got != 2 {
+		t.Fatalf("StringWidth malformed UTF-8 = %d", got)
+	}
+	if got := WrapText(invalid, 1, core.TextWrapWrap); got != "a\nb" {
+		t.Fatalf("WrapText malformed UTF-8 = %q", got)
+	}
+	if got := WrapText("\x1b\t0", 7, core.TextWrapWrap); got != "       \n 0" {
+		t.Fatalf("WrapText stray ESC+TAB = %q", got)
+	}
+	if got := StripANSI("a\x1b[31"); got != "a" {
+		t.Fatalf("StripANSI incomplete CSI = %q", got)
+	}
+}
+
+func TestSliceAndTruncateCloseANSIState(t *testing.T) {
+	red := "\x1b[31mabcdef\x1b[0m"
+	sliced := SliceByWidth(red, 0, 3)
+	if sliced != "\x1b[31mabc\x1b[0m" {
+		t.Fatalf("styled slice leaked state: %q", sliced)
+	}
+	truncated := TruncateText(red, 4, core.TextWrapTruncateEnd)
+	if !strings.HasSuffix(truncated, "\x1b[0m…") && !strings.HasSuffix(truncated, "…\x1b[0m") {
+		t.Fatalf("styled truncation missing reset: %q", truncated)
+	}
+	if got := StripANSI(truncated); got != "abc…" {
+		t.Fatalf("styled truncation visible=%q", got)
+	}
+
+	link := "\x1b]8;;https://example.com\x07abcdef\x1b]8;;\x07"
+	linkSlice := SliceByWidth(link, 0, 3)
+	if !strings.HasSuffix(linkSlice, "\x1b]8;;\x07") {
+		t.Fatalf("hyperlink slice missing close: %q", linkSlice)
+	}
+	if got := StripANSI(linkSlice); got != "abc" {
+		t.Fatalf("hyperlink slice visible=%q", got)
+	}
+}
+
+func TestSliceBoundaryReplaysOnlyVisualANSIState(t *testing.T) {
+	in := "\x1b[2J\x1b[31mabcdef\x1b[0m"
+	got := SliceByWidth(in, 2, 4)
+	if strings.Contains(got, "\x1b[2J") {
+		t.Fatalf("slice replayed non-visual control: %q", got)
+	}
+	if !strings.HasPrefix(got, "\x1b[31m") || !strings.HasSuffix(got, "\x1b[0m") {
+		t.Fatalf("slice did not reconstruct color state: %q", got)
+	}
+	if visible := StripANSI(got); visible != "cd" {
+		t.Fatalf("slice visible=%q", visible)
+	}
+}
+
+func TestWrapRowsRestoreANSIState(t *testing.T) {
+	red := "\x1b[31mhello world\x1b[0m"
+	rows := strings.Split(WrapText(red, 5, core.TextWrapTrim), "\n")
+	if len(rows) != 2 {
+		t.Fatalf("rows=%q", rows)
+	}
+	if rows[0] != "\x1b[31mhello\x1b[0m" {
+		t.Fatalf("first wrapped row not self-contained: %q", rows[0])
+	}
+	if rows[1] != "\x1b[31mworld\x1b[0m" {
+		t.Fatalf("second wrapped row did not reopen style: %q", rows[1])
+	}
+
+	link := "\x1b]8;;https://example.com\x07hello world\x1b]8;;\x07"
+	rows = strings.Split(WrapText(link, 5, core.TextWrapTrim), "\n")
+	if len(rows) != 2 || !strings.HasSuffix(rows[0], "\x1b]8;;\x07") || !strings.HasPrefix(rows[1], "\x1b]8;;https://example.com\x07") {
+		t.Fatalf("hyperlink state not restored across rows: %q", rows)
+	}
+	for _, row := range rows {
+		if StringWidth(row) != 5 {
+			t.Fatalf("row width changed by state restoration: %q", row)
+		}
+	}
+}
+
+func TestEmojiPresentationWidthMatchesForkPolicy(t *testing.T) {
+	cases := map[string]int{
+		"⚠":       1,
+		"⚠️":      2,
+		"♥":       1,
+		"♥️":      2,
+		"☀":       1,
+		"☀️":      2,
+		"☺":       1,
+		"☺️":      2,
+		"✅":       2,
+		"1️":      1, // incomplete keycap: digit + VS16 only
+		"1️⃣":     2,
+		"🇨🇴":      2,
+		"👨‍👩‍👧‍👦": 2,
+	}
+	for input, want := range cases {
+		if got := StringWidth(input); got != want {
+			t.Errorf("StringWidth(%q)=%d want %d", input, got, want)
+		}
+	}
+}
+
+func TestTerminalControlsDoNotMergeIntoNeighboringGraphemes(t *testing.T) {
+	gs := Graphemes("a\x12b")
+	if len(gs) != 3 || gs[0].Text != "a" || gs[1].Text != "\x12" || gs[1].Width != 0 || gs[2].Text != "b" {
+		t.Fatalf("control graphemes=%#v", gs)
+	}
+	gs = Graphemes("\r\x12")
+	if len(gs) != 2 || gs[0].Text != "\r" || gs[1].Text != "\x12" {
+		t.Fatalf("CR/control graphemes=%#v", gs)
+	}
+	gs = Graphemes("\r\u0616")
+	if len(gs) != 2 || gs[0].Text != "\r" || gs[1].Text != "\u0616" {
+		t.Fatalf("control/combining graphemes=%#v", gs)
 	}
 }

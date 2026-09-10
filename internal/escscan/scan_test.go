@@ -19,3 +19,16 @@ func TestNextSequenceFamilies(t *testing.T) {
 		}
 	}
 }
+
+func TestNextANSISequenceRejectsInputMetaAndControls(t *testing.T) {
+	for _, in := range []string{"\x1b\t0", "\x1bé", "\x1b\x00"} {
+		if _, ok := NextANSISequence(in); ok {
+			t.Fatalf("unexpected ANSI sequence for %q", in)
+		}
+	}
+	for _, in := range []string{"\x1b[31mrest", "\x1b]0;title\x07rest", "\x1bPabc\x1b\\rest", "\x1b0rest"} {
+		if seq, ok := NextANSISequence(in); !ok || seq == "" {
+			t.Fatalf("failed ANSI %q -> %q,%v", in, seq, ok)
+		}
+	}
+}

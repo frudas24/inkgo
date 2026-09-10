@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- harden Windows native-console key translation for combined Ctrl/Shift/Alt modifiers and preserve repeat semantics across reconstructed VT/CSI-u input;
+- preserve the magnitude and remainder of Windows mouse-wheel deltas instead of collapsing multi-notch or partial wheel records to a single step;
+- prioritize the native Windows stop event ahead of console readiness so shutdown cannot consume pending input intended for the next shell/application;
+- split input-sequence scanning from output-ANSI scanning so text wrapping, slicing and rendering no longer classify arbitrary Alt/meta input as terminal-output control sequences;
+- make ANSI-aware wrapping treat CSI/OSC/DCS/APC/PM/ESC controls as atomic zero-width units, preserve tab-stop semantics, and close/reopen SGR and OSC-8 state at soft-wrap boundaries;
+- harden width/slice/truncate behavior for invalid UTF-8, control boundaries, text-default emoji, VS16 presentation, keycaps, regional indicators and ZWJ clusters;
+- prevent sliced/truncated ANSI text from leaking SGR or OSC-8 state, and avoid replaying non-style controls that appeared before a slice boundary;
+- unify `ParseANSI`, `StripANSI` and the output escape scanner for generic DEC escape families such as `ESC ( 0`, PM/DCS/APC, incomplete sequences and control-character boundaries;
+- add `FuzzWrapTextInvariants` and `FuzzParseANSIInvariants`, bringing the permanent fuzz surface to five domains, and raise the CI coverage floor from 77% to 80%.
+
 ## v0.1.7 — native Windows console input and hot-path hardening
 
 - the `terminal-smoke` example echoes every key it receives (count, name, text, sequence, modifiers), so an unresponsive-looking demo can be told apart from a genuinely broken input path;

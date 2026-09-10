@@ -9,6 +9,11 @@ import (
 const Ellipsis = "…"
 
 func TruncateText(text string, columns int, position core.TextWrap) string {
+	// Normalize malformed UTF-8 and incomplete/unknown output controls even
+	// when no truncation is ultimately required. StringWidth already ignores
+	// malformed bytes; returning the original string on the fast path would
+	// otherwise make the result disagree with its own measured width.
+	text = tokensString(terminalTokens(text))
 	if columns < 1 {
 		return ""
 	}
@@ -138,7 +143,7 @@ func hardWrapLine(line string, width int, trim bool) []string {
 		}
 		out[i] = tokensString(row)
 	}
-	return out
+	return restoreVisualStateAcrossRows(out)
 }
 
 // WrapText mirrors Ink's wrap / wrap-trim / truncate-* behavior.

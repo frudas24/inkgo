@@ -3,6 +3,7 @@ package textutil
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	core "github.com/frudas24/inkgo/internal/core"
 )
@@ -28,6 +29,9 @@ func FuzzWrapTextInvariants(f *testing.F) {
 			mode = core.TextWrapTrim
 		}
 		got := WrapText(input, width, mode)
+		if !utf8.ValidString(got) {
+			t.Fatalf("wrap returned invalid UTF-8: input=%q output=%q", input, got)
+		}
 		for _, line := range strings.Split(got, "\n") {
 			if w := StringWidth(line); w > width {
 				t.Fatalf("line width %d > %d: input=%q output=%q line=%q", w, width, input, got, line)
@@ -38,6 +42,27 @@ func FuzzWrapTextInvariants(f *testing.F) {
 					t.Fatalf("trim left visible spaces: input=%q output=%q line=%q", input, got, line)
 				}
 			}
+		}
+
+		visible := StringWidth(input)
+		if visible > 0 {
+			start := visible / 3
+			end := min(visible, start+width)
+			slice := SliceByWidth(input, start, end)
+			if !utf8.ValidString(slice) {
+				t.Fatalf("slice returned invalid UTF-8: input=%q slice=%q", input, slice)
+			}
+			if w := StringWidth(slice); w > end-start {
+				t.Fatalf("slice width %d > %d: input=%q slice=%q", w, end-start, input, slice)
+			}
+		}
+
+		truncated := TruncateText(input, width, core.TextWrapTruncateEnd)
+		if !utf8.ValidString(truncated) {
+			t.Fatalf("truncate returned invalid UTF-8: input=%q output=%q", input, truncated)
+		}
+		if w := StringWidth(truncated); w > width {
+			t.Fatalf("truncate width %d > %d: input=%q output=%q", w, width, input, truncated)
 		}
 	})
 }

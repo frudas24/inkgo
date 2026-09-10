@@ -299,3 +299,23 @@ func TestRuntimeProcessEventsReturnsRenderError(t *testing.T) {
 		t.Fatalf("error=%v", err)
 	}
 }
+
+func TestParseANSIConsumesGenericEscapeSequencesAtomically(t *testing.T) {
+	items := ParseANSI("\x1b(0abc\x1b(B", TextStyle{})
+	var visible strings.Builder
+	for _, item := range items {
+		visible.WriteString(item.Value)
+	}
+	if got := visible.String(); got != "abc" {
+		t.Fatalf("generic ESC sequence leaked bytes: %q", got)
+	}
+
+	items = ParseANSI("a\x1b^private\x1b\\b", TextStyle{})
+	visible.Reset()
+	for _, item := range items {
+		visible.WriteString(item.Value)
+	}
+	if got := visible.String(); got != "ab" {
+		t.Fatalf("PM control leaked bytes: %q", got)
+	}
+}

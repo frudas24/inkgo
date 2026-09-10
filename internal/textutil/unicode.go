@@ -4,6 +4,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	escscan "github.com/frudas24/inkgo/internal/escscan"
 )
 
 // StripANSI removes CSI/OSC/DCS/APC escape sequences. It is deliberately
@@ -19,74 +21,47 @@ func StripANSI(s string) string {
 				i++
 				continue
 			}
-			b.WriteRune(r)
+			b.WriteString(s[i : i+n])
 			i += n
 			continue
 		}
-		if i+1 >= len(s) {
-			break
+
+		if seq, ok := escscan.NextANSISequence(s[i:]); ok {
+			i += len(seq)
+			continue
 		}
+		if i+1 >= len(s) {
+			break // trailing ESC is an incomplete control introducer
+		}
+		// Unterminated string/CSI controls are unsafe to expose as visible text.
+		// Drop their remaining payload. Unknown ESC forms drop only ESC so the
+		// following byte can still be handled as ordinary text/control data.
 		switch s[i+1] {
-		case '[': // CSI: final byte 0x40..0x7e
-			i += 2
-			for i < len(s) {
-				c := s[i]
-				i++
-				if c >= 0x40 && c <= 0x7e {
-					break
-				}
-			}
-		case ']': // OSC: BEL or ST
-			i += 2
-			for i < len(s) {
-				if s[i] == 0x07 {
-					i++
-					break
-				}
-				if s[i] == 0x1b && i+1 < len(s) && s[i+1] == '\\' {
-					i += 2
-					break
-				}
-				i++
-			}
-		case 'P', '_': // DCS/APC to ST
-			i += 2
-			for i < len(s) {
-				if s[i] == 0x1b && i+1 < len(s) && s[i+1] == '\\' {
-					i += 2
-					break
-				}
-				i++
-			}
+		case '[', ']', 'P', '_', '^':
+			return b.String()
 		default:
-			// Generic 7-bit ESC sequence. The byte immediately after ESC may
-			// already be the final byte (ESC Fe, 0x30..0x7e). Only scan a
-			// following final when that first byte is an intermediate
-			// (0x20..0x2f). The old code always advanced past the second byte
-			// and could therefore swallow one visible character after a
-			// two-byte sequence such as ESC 0.
-			j := i + 1
-			if s[j] >= 0x30 && s[j] <= 0x7e {
-				i = j + 1
-				break
-			}
-			if s[j] >= 0x20 && s[j] <= 0x2f {
-				j++
-				for j < len(s) && s[j] >= 0x20 && s[j] <= 0x2f {
-					j++
-				}
-				if j < len(s) && s[j] >= 0x30 && s[j] <= 0x7e {
-					j++
-				}
-				i = j
-				break
-			}
-			// Unknown/incomplete ESC form: drop only ESC itself and let the
-			// following byte be processed normally.
 			i++
 		}
 	}
 	return b.String()
+}
+
+func sanitizeUTF8(s string) string {
+	if s == "" || utf8.ValidString(s) {
+		return s
+	}
+	var clean strings.Builder
+	clean.Grow(len(s))
+	for len(s) > 0 {
+		r, n := utf8.DecodeRuneInString(s)
+		if r == utf8.RuneError && n == 1 {
+			s = s[1:]
+			continue
+		}
+		clean.WriteString(s[:n])
+		s = s[n:]
+	}
+	return clean.String()
 }
 
 func isZeroWidth(r rune) bool {
@@ -111,12 +86,54 @@ func isZeroWidth(r rune) bool {
 	return false
 }
 
-func isEmojiRune(r rune) bool {
-	return (r >= 0x1f300 && r <= 0x1faff) ||
+func isEmojiCandidateRune(r rune) bool {
+	return r == '#' || r == '*' || (r >= '0' && r <= '9') ||
+		(r >= 0x2300 && r <= 0x23ff) ||
 		(r >= 0x2600 && r <= 0x27bf) ||
-		(r >= 0x1f1e6 && r <= 0x1f1ff) ||
-		(r >= 0x2300 && r <= 0x23ff)
+		(r >= 0x1f000 && r <= 0x1faff)
 }
+
+// isEmojiPresentationRune is the compact terminal-relevant subset of Unicode's
+// Emoji_Presentation property. Text-default symbols such as U+26A0 WARNING SIGN
+// intentionally remain narrow unless VS16 requests emoji presentation.
+func isEmojiPresentationRune(r rune) bool {
+	switch {
+	case r == 0x231a || r == 0x231b,
+		r >= 0x23e9 && r <= 0x23ec,
+		r == 0x23f0 || r == 0x23f3,
+		r >= 0x25fd && r <= 0x25fe,
+		r >= 0x2614 && r <= 0x2615,
+		r >= 0x2648 && r <= 0x2653,
+		r == 0x267f || r == 0x2693 || r == 0x26a1,
+		r >= 0x26aa && r <= 0x26ab,
+		r >= 0x26bd && r <= 0x26be,
+		r >= 0x26c4 && r <= 0x26c5,
+		r == 0x26ce || r == 0x26d4 || r == 0x26ea,
+		r >= 0x26f2 && r <= 0x26f3,
+		r == 0x26f5 || r == 0x26fa || r == 0x26fd,
+		r == 0x2705 || r == 0x270a || r == 0x270b || r == 0x2728,
+		r == 0x274c || r == 0x274e,
+		r >= 0x2753 && r <= 0x2755,
+		r == 0x2757,
+		r >= 0x2795 && r <= 0x2797,
+		r == 0x27b0 || r == 0x27bf,
+		r >= 0x2b1b && r <= 0x2b1c,
+		r == 0x2b50 || r == 0x2b55,
+		r == 0x1f004 || r == 0x1f0cf || r == 0x1f18e,
+		r >= 0x1f191 && r <= 0x1f19a,
+		r == 0x1f201 || r == 0x1f21a || r == 0x1f22f,
+		r >= 0x1f232 && r <= 0x1f236,
+		r >= 0x1f238 && r <= 0x1f23a,
+		r >= 0x1f250 && r <= 0x1f251,
+		r >= 0x1f300 && r <= 0x1faff,
+		r >= 0x1f1e6 && r <= 0x1f1ff:
+		return true
+	default:
+		return false
+	}
+}
+
+func isKeycapBase(r rune) bool { return r == '#' || r == '*' || (r >= '0' && r <= '9') }
 
 // isWideRune follows wcwidth's conventional East Asian W/F ranges and treats
 // ambiguous characters as narrow, matching the TypeScript fork.
@@ -142,7 +159,7 @@ func RuneWidth(r rune) int {
 	if isZeroWidth(r) {
 		return 0
 	}
-	if isEmojiRune(r) || isWideRune(r) {
+	if isEmojiPresentationRune(r) || isWideRune(r) {
 		return 2
 	}
 	return 1
@@ -160,18 +177,44 @@ func Graphemes(s string) []Grapheme {
 	if s == "" {
 		return nil
 	}
+	// Terminal text is UTF-8. Go strings may still contain arbitrary bytes, so
+	// drop malformed bytes while preserving a genuinely encoded U+FFFD. This
+	// keeps width, wrapping, slicing and tab expansion on one text model.
+	s = sanitizeUTF8(s)
+	if s == "" {
+		return nil
+	}
 	out := make([]Grapheme, 0, len(s))
 	var cur strings.Builder
 	curWidth := 0
 	joinNext := false
 	riCount := 0
-	hadEmoji := false
+	emojiWide := false
+	emojiCandidate := false
+	hasVS16 := false
+	hasVS15 := false
+	keycapBase := false
+	keycapComplete := false
+	firstBase := rune(0)
+	curIsControl := false
 	flush := func() {
 		if cur.Len() == 0 {
 			return
 		}
 		w := curWidth
-		if hadEmoji && w > 0 {
+		switch {
+		case keycapComplete:
+			w = 2
+		case hasVS15 && firstBase != 0:
+			// VS15 explicitly requests text presentation. Ignore an otherwise
+			// emoji-default width for the base, but retain East Asian W/F width.
+			w = 1
+			if isWideRune(firstBase) {
+				w = 2
+			}
+		case hasVS16 && emojiCandidate && !keycapBase:
+			w = 2
+		case emojiWide && w > 0:
 			w = 2
 		}
 		// One isolated regional indicator is narrow; a flag pair is wide.
@@ -185,27 +228,60 @@ func Graphemes(s string) []Grapheme {
 		curWidth = 0
 		joinNext = false
 		riCount = 0
-		hadEmoji = false
+		emojiWide = false
+		emojiCandidate = false
+		hasVS16 = false
+		hasVS15 = false
+		keycapBase = false
+		keycapComplete = false
+		firstBase = 0
+		curIsControl = false
 	}
 
 	for _, r := range s {
-		combining := isZeroWidth(r) && r != '\n' && r != '\r' && r != '\t'
+		control := r < 0x20 || (r >= 0x7f && r <= 0x9f)
+		// Zero-width terminal controls are not combining marks. Keeping them
+		// as standalone graphemes prevents CR/C0/C1 bytes from being hidden
+		// inside a neighboring cluster while still assigning them zero cells.
+		combining := isZeroWidth(r) && !control
 		emojiMod := r >= 0x1f3fb && r <= 0x1f3ff
+		if cur.Len() > 0 && curIsControl {
+			flush()
+		}
 		regional := r >= 0x1f1e6 && r <= 0x1f1ff
 		if cur.Len() > 0 && !combining && !emojiMod && !joinNext {
 			if !(regional && riCount == 1) {
 				flush()
 			}
 		}
+		if cur.Len() == 0 {
+			curIsControl = control
+		}
 		cur.WriteRune(r)
 		if regional {
 			riCount++
-			hadEmoji = true
+			emojiWide = true
 		}
-		if isEmojiRune(r) {
-			hadEmoji = true
+		if isEmojiCandidateRune(r) {
+			emojiCandidate = true
+		}
+		if isEmojiPresentationRune(r) {
+			emojiWide = true
+		}
+		if r == 0xfe0f {
+			hasVS16 = true
+		}
+		if r == 0xfe0e {
+			hasVS15 = true
+		}
+		if r == 0x20e3 && keycapBase {
+			keycapComplete = true
 		}
 		if !isZeroWidth(r) {
+			if firstBase == 0 {
+				firstBase = r
+				keycapBase = isKeycapBase(r)
+			}
 			curWidth += RuneWidth(r)
 		}
 		if r == 0x200d {
@@ -230,10 +306,8 @@ func StringWidth(s string) int {
 	w := 0
 	for _, g := range Graphemes(s) {
 		switch g.Text {
-		case "\n", "\r":
+		case "\n", "\r", "\t":
 			continue
-		case "\t":
-			w += DefaultTabInterval - (w % DefaultTabInterval)
 		default:
 			w += g.Width
 		}
@@ -257,19 +331,22 @@ func SliceByWidth(s string, start, end int) string {
 	var b strings.Builder
 	pos := 0
 	started := false
-	var prefix strings.Builder
+	state := sliceANSIState{}
+
+	startOutput := func() {
+		if started {
+			return
+		}
+		b.WriteString(state.opening())
+		started = true
+	}
+
 	for _, tok := range tokens {
 		if tok.escape {
-			if pos < start && !started {
-				// Preserve the escape history needed to reproduce active styling at
-				// the slice boundary. This is intentionally emitted only if the
-				// slice later contains visible content.
-				prefix.WriteString(tok.text)
-			} else if pos < end {
-				if !started {
-					b.WriteString(prefix.String())
-					started = true
-				}
+			state.observe(tok.text)
+			// Before the first selected grapheme, only reconstruct visual state at
+			// the boundary; do not replay arbitrary cursor/erase/control history.
+			if started && pos < end {
 				b.WriteString(tok.text)
 			}
 			continue
@@ -277,19 +354,13 @@ func SliceByWidth(s string, start, end int) string {
 		next := pos + tok.width
 		if tok.width == 0 {
 			if pos >= start && pos < end {
-				if !started {
-					b.WriteString(prefix.String())
-					started = true
-				}
+				startOutput()
 				b.WriteString(tok.text)
 			}
 			continue
 		}
 		if pos >= start && next <= end {
-			if !started {
-				b.WriteString(prefix.String())
-				started = true
-			}
+			startOutput()
 			b.WriteString(tok.text)
 		}
 		// Wide glyphs straddling a boundary are omitted, matching the fork's
@@ -299,5 +370,9 @@ func SliceByWidth(s string, start, end int) string {
 			break
 		}
 	}
+	if !started {
+		return ""
+	}
+	b.WriteString(state.closing())
 	return b.String()
 }

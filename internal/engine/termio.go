@@ -6,6 +6,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	escscan "github.com/frudas24/inkgo/internal/escscan"
 )
 
 const (
@@ -273,67 +275,55 @@ func ParseANSI(input string, base TextStyle) []StyledGrapheme {
 			if g.Text == "\r" {
 				continue
 			}
-			w := g.Width
-			out = append(out, StyledGrapheme{Value: g.Text, Width: w, Style: style, Hyperlink: href})
+			out = append(out, StyledGrapheme{Value: g.Text, Width: g.Width, Style: style, Hyperlink: href})
 		}
 	}
+
 	for i := 0; i < len(input); {
 		if input[i] != 0x1b {
 			i++
 			continue
 		}
 		flush(i)
-		if i+1 >= len(input) {
-			plainStart = i + 1
-			break
-		}
-		switch input[i+1] {
-		case '[':
-			j := i + 2
-			for j < len(input) && (input[j] < 0x40 || input[j] > 0x7e) {
-				j++
-			}
-			if j >= len(input) {
-				i = len(input)
-				plainStart = i
+		seq, ok := escscan.NextANSISequence(input[i:])
+		if !ok {
+			// Incomplete CSI/control strings are unsafe to surface as text; drop
+			// their remainder. For an unknown ESC form, drop only ESC and allow
+			// following bytes to remain ordinary text.
+			if i+1 >= len(input) {
+				plainStart = len(input)
 				break
 			}
-			if input[j] == 'm' {
-				applySGR(input[i+2:j], &style)
+			switch input[i+1] {
+			case '[', ']', 'P', '_', '^':
+				plainStart = len(input)
+				i = len(input)
+				continue
+			default:
+				i++
+				plainStart = i
+				continue
 			}
-			i = j + 1
-			plainStart = i
-		case ']':
-			j := i + 2
-			for j < len(input) && input[j] != 0x07 && !(input[j] == 0x1b && j+1 < len(input) && input[j+1] == '\\') {
-				j++
+		}
+
+		if strings.HasPrefix(seq, "\x1b[") && seq[len(seq)-1] == 'm' {
+			applySGR(seq[2:len(seq)-1], &style)
+		} else if strings.HasPrefix(seq, "\x1b]") {
+			payload := seq[2:]
+			if strings.HasSuffix(payload, BEL) {
+				payload = payload[:len(payload)-1]
+			} else if strings.HasSuffix(payload, ST) {
+				payload = payload[:len(payload)-len(ST)]
 			}
-			content := input[i+2 : j]
-			if strings.HasPrefix(content, "8;") {
-				parts := strings.SplitN(content, ";", 3)
+			if strings.HasPrefix(payload, "8;") {
+				parts := strings.SplitN(payload, ";", 3)
 				if len(parts) == 3 {
 					href = parts[2]
 				}
 			}
-			if j < len(input) && input[j] == 0x1b {
-				j += 2
-			} else if j < len(input) {
-				j++
-			}
-			i = j
-			plainStart = i
-		case 'P', '_', '^': // DCS/APC/PM until ST
-			j := strings.Index(input[i+2:], ST)
-			if j < 0 {
-				i = len(input)
-			} else {
-				i += 2 + j + len(ST)
-			}
-			plainStart = i
-		default:
-			i += 2
-			plainStart = i
 		}
+		i += len(seq)
+		plainStart = i
 	}
 	flush(len(input))
 	return out

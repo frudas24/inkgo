@@ -61,3 +61,47 @@ func NextSequence(s string) (string, bool) {
 	}
 	return s[:1+n], true
 }
+
+// NextANSISequence returns the first complete ANSI/ECMA-48 output control
+// sequence at the beginning of s. Unlike NextSequence, it does not treat
+// ESC+arbitrary-rune as an Alt/meta input key. Text rendering uses this
+// stricter scanner so controls such as TAB following a stray ESC remain text
+// controls and are not hidden inside a zero-width token.
+func NextANSISequence(s string) (string, bool) {
+	if len(s) < 2 || s[0] != 0x1b {
+		return "", false
+	}
+	switch s[1] {
+	case '[': // CSI: final byte 0x40..0x7e
+		for i := 2; i < len(s); i++ {
+			if s[i] >= 0x40 && s[i] <= 0x7e {
+				return s[:i+1], true
+			}
+		}
+		return "", false
+	case ']': // OSC: BEL or ST
+		if i := strings.IndexByte(s[2:], 0x07); i >= 0 {
+			return s[:2+i+1], true
+		}
+		if i := strings.Index(s[2:], st); i >= 0 {
+			return s[:2+i+len(st)], true
+		}
+		return "", false
+	case 'P', '_', '^': // DCS/APC/PM to ST
+		if i := strings.Index(s[2:], st); i >= 0 {
+			return s[:2+i+len(st)], true
+		}
+		return "", false
+	}
+
+	// Generic 7-bit ESC sequence: zero or more intermediate bytes
+	// (0x20..0x2f), followed by one final byte (0x30..0x7e).
+	i := 1
+	for i < len(s) && s[i] >= 0x20 && s[i] <= 0x2f {
+		i++
+	}
+	if i < len(s) && s[i] >= 0x30 && s[i] <= 0x7e {
+		return s[:i+1], true
+	}
+	return "", false
+}

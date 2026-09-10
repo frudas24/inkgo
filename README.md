@@ -146,7 +146,7 @@ go generate ./...
 go test ./...
 go vet ./...
 go test -race ./...
-./scripts/check-coverage.sh 77.0 coverage.out
+./scripts/check-coverage.sh 80.0 coverage.out
 ./scripts/check-no-external-deps.sh
 ./scripts/check-version.sh
 ```
@@ -157,6 +157,8 @@ Fuzz targets:
 go test ./internal/inputparser -run='^$' -fuzz=FuzzParserNeverPanics -fuzztime=5s
 go test ./internal/engine -run='^$' -fuzz=FuzzScreenWideCellInvariants -fuzztime=5s
 go test ./internal/engine -run='^$' -fuzz=FuzzLayoutAndRenderInvariants -fuzztime=5s
+go test ./internal/textutil -run='^$' -fuzz=FuzzWrapTextInvariants -fuzztime=5s
+go test ./internal/engine -run='^$' -fuzz=FuzzParseANSIInvariants -fuzztime=5s
 ```
 
 Examples:
@@ -178,6 +180,7 @@ go run ./examples/terminal-smoke
 - [`docs/PORT_STATUS.md`](docs/PORT_STATUS.md) — remaining parity boundary
 - [`docs/validation/ROUND5.md`](docs/validation/ROUND5.md) — production-hardening evidence
 - [`docs/validation/WINDOWS_NATIVE_INPUT.md`](docs/validation/WINDOWS_NATIVE_INPUT.md) — Windows native console input and resize validation
+- [`docs/validation/POST_V0.1.7_DEEP_AUDIT.md`](docs/validation/POST_V0.1.7_DEEP_AUDIT.md) — post-v0.1.7 Windows/ANSI/Unicode deep-audit evidence
 
 ## License
 

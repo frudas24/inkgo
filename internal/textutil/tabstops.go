@@ -2,8 +2,6 @@ package textutil
 
 import (
 	"strings"
-
-	escscan "github.com/frudas24/inkgo/internal/escscan"
 )
 
 const DefaultTabInterval = 8
@@ -11,6 +9,10 @@ const DefaultTabInterval = 8
 // ExpandTabs mirrors the fork's Ghostty-inspired 8-column tab stops while
 // preserving ANSI/OSC sequences verbatim and resetting the column on newline.
 func ExpandTabs(text string, interval ...int) string {
+	// Sanitize before walking by grapheme byte length. A malformed one-byte
+	// sequence must never turn into a three-byte replacement and desynchronize
+	// the source cursor.
+	text = sanitizeUTF8(text)
 	step := DefaultTabInterval
 	if len(interval) > 0 && interval[0] > 0 {
 		step = interval[0]
@@ -22,14 +24,11 @@ func ExpandTabs(text string, interval ...int) string {
 	col := 0
 	for i := 0; i < len(text); {
 		if text[i] == 0x1b {
-			seq, ok := escscan.NextSequence(text[i:])
-			if ok {
+			seq, consumed, preserve := scanOutputEscape(text[i:])
+			if preserve {
 				b.WriteString(seq)
-				i += len(seq)
-				continue
 			}
-			b.WriteByte(text[i])
-			i++
+			i += consumed
 			continue
 		}
 		if text[i] == '\t' {

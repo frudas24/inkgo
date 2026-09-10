@@ -63,7 +63,7 @@ jobs:
         with:
           go-version: 'stable'
           cache: false
-      - run: ./scripts/check-coverage.sh 77.0 coverage.out
+      - run: ./scripts/check-coverage.sh 80.0 coverage.out
       - uses: actions/upload-artifact@v7
         with:
           name: coverage
@@ -94,3 +94,5 @@ jobs:
       - run: go test ./internal/inputparser -run='^$' -fuzz=FuzzParserNeverPanics -fuzztime=5s
       - run: go test ./internal/engine -run='^$' -fuzz=FuzzScreenWideCellInvariants -fuzztime=5s
       - run: go test ./internal/engine -run='^$' -fuzz=FuzzLayoutAndRenderInvariants -fuzztime=5s
+      - run: go test ./internal/textutil -run='^$' -fuzz=FuzzWrapTextInvariants -fuzztime=5s
+      - run: go test ./internal/engine -run='^$' -fuzz=FuzzParseANSIInvariants -fuzztime=5s
