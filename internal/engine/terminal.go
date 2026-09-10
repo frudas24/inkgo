@@ -132,6 +132,9 @@ type Runtime struct {
 	events               chan struct{}
 	pendingEvents        []func()
 	eventsClosed         bool
+	resizeGeneration     uint64
+	resizeQueued         bool
+	resizeTimer          *time.Timer
 	stopOnce             sync.Once
 	stopCh               chan struct{}
 	raw                  *RawTerminal
@@ -257,8 +260,8 @@ func (rt *Runtime) RefreshSize() {
 	}
 	if sz, err := rt.Terminal.Size(); err == nil && sz.Width > 0 && sz.Height > 0 {
 		previous := rt.Renderer.Viewport()
-		rt.Renderer.SetSize(sz.Width, sz.Height)
 		if previous.Width != sz.Width || previous.Height != sz.Height {
+			rt.Renderer.SetSize(sz.Width, sz.Height)
 			DispatchResize(rt.Root, sz.Width, sz.Height)
 		}
 	}
@@ -321,6 +324,10 @@ func (rt *Runtime) Events() <-chan struct{} { return rt.events }
 func (rt *Runtime) enqueueEvent(event func()) {
 	rt.eventMu.Lock()
 	defer rt.eventMu.Unlock()
+	rt.enqueueEventLocked(event)
+}
+
+func (rt *Runtime) enqueueEventLocked(event func()) {
 	if rt.eventsClosed {
 		return
 	}
@@ -997,6 +1004,7 @@ func (rt *Runtime) enterTerminal() error {
 func (rt *Runtime) leaveTerminal() {
 	rt.eventMu.Lock()
 	rt.eventsClosed = true
+	rt.cancelResizeLocked()
 	rt.pendingEvents = nil
 	select {
 	case <-rt.events:

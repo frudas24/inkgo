@@ -18,12 +18,7 @@ func installRuntimeSignalHandlers(rt *Runtime) func() {
 			case sig := <-ch:
 				switch sig {
 				case syscall.SIGWINCH:
-					// Resize is also the strongest practical tmux attach / SSH
-					// reconnect signal, so re-enter alternate screen if active.
-					rt.enqueueEvent(func() {
-						rt.RefreshSize()
-						rt.ReassertTerminalModes(true)
-					})
+					rt.queueResize()
 				case syscall.SIGCONT:
 					rt.enqueueEvent(rt.recoverAfterResume)
 				}
