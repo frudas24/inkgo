@@ -19,9 +19,10 @@ git diff --exit-code -- api.go
 go test ./...
 go vet ./...
 go test -race ./...
-./scripts/check-coverage.sh 77.0 coverage.out
+./scripts/check-coverage.sh 80.0 coverage.out
 ./scripts/check-no-external-deps.sh
 ./scripts/check-version.sh
+(cd test/pty && go mod download && go mod verify && GOFLAGS=-mod=readonly go test -count=5 -shuffle=on -timeout=120s ./... && GOFLAGS=-mod=readonly go vet ./...)
 # Include new source files in the commit; the manifest also lists non-ignored
 # untracked files, so inspect git status before committing the release.
 git status --short
@@ -36,6 +37,8 @@ console. Linux/macOS real-terminal smoke is also recommended.
 CI tests the minimum supported Go line (`1.23.x`) and the current stable Go
 release across Ubuntu, macOS and Windows. Race, coverage and fuzz-smoke use the
 current stable Go toolchain; policy checks remain on the minimum supported line.
+The separate `test/pty` module runs real PTY/ConPTY end-to-end scenarios on
+Ubuntu, macOS and Windows, with an additional Linux race campaign.
 
 ## Tag
 

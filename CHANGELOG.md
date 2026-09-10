@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- add a separate `test/pty` Go module powered by `github.com/aymanbagabas/go-pty` for real Unix PTY / Windows ConPTY end-to-end tests without adding dependencies to the published `inkgo` module;
+- cover alternate-screen entry/exit, keyboard, Unicode, bracketed paste across multiple reads, resize without keyboard wakeup, immediate startup resize, resize bursts, Escape timeout, Ctrl+C raw input, panic unwinding, repeated sessions, focus/mouse where deterministically injectable, and terminal-mode restoration from outside the child process;
+- fix a Unix startup race where `Runtime.Run` installed `SIGWINCH` handling only after `Start` performed its initial render, allowing an immediate post-start resize to be lost until unrelated input arrived; signal handlers are now installed before terminal entry/first paint;
+- add cross-platform PTY CI on Ubuntu/macOS/Windows plus a Linux PTY race campaign, while keeping the root module stdlib-only and dependency-free.
+
 ## v0.1.8 — deep-audit hardening: Windows input, ANSI and Unicode
 
 - harden Windows native-console key translation for combined Ctrl/Shift/Alt modifiers and preserve repeat semantics across reconstructed VT/CSI-u input;

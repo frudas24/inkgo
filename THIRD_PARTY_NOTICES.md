@@ -31,3 +31,13 @@ The customizations contributed by that fork do not carry an explicit license.
 Before any use that relies on those specific behaviors, obtain a license
 declaration for the fork (or a written permission for this port). This notice
 exists so downstream users can evaluate that chain explicitly.
+
+
+## Test-only PTY harness
+
+The separate `test/pty` integration-test module uses
+`github.com/aymanbagabas/go-pty` (MIT) to create Unix PTYs and Windows ConPTY
+sessions. Its transitive Go-module dependencies are development/test tooling
+only and are not imported by the published `github.com/frudas24/inkgo` module.
+No `go-pty` or transitive dependency source is vendored into this repository;
+their own upstream license terms apply when the test module is downloaded.

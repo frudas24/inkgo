@@ -30,30 +30,51 @@ jobs:
 
 
   pty-integration:
-    name: pty integration (${{ matrix.os }}, Go 1.23)
+    name: pty integration (${{ matrix.os }}, Go ${{ matrix.go }})
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            go: '1.23.x'
+          - os: macos-latest
+            go: '1.23.x'
+          - os: windows-latest
+            go: '1.23.x'
+          - os: ubuntu-latest
+            go: 'stable'
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: '1.23.x'
+          go-version: ${{ matrix.go }}
           cache: false
+      - run: go version
+      - name: Download PTY test dependencies
+        working-directory: test/pty
+        run: go mod download
       - name: Verify PTY test module
         working-directory: test/pty
         run: go mod verify
+      - name: Verify PTY module files are complete
+        working-directory: test/pty
+        run: go mod tidy -diff
       - name: PTY end-to-end suite
         working-directory: test/pty
+        env:
+          GOFLAGS: -mod=readonly
         run: go test -count=5 -shuffle=on -timeout=120s ./...
       - name: Vet PTY harness
         working-directory: test/pty
+        env:
+          GOFLAGS: -mod=readonly
         run: go vet ./...
       - name: PTY race campaign
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'ubuntu-latest' && matrix.go == 'stable'
         working-directory: test/pty
+        env:
+          GOFLAGS: -mod=readonly
         run: go test -race -count=5 -shuffle=on -timeout=120s ./...
 
   windows-native-input:

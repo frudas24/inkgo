@@ -14,7 +14,9 @@ go get github.com/frudas24/inkgo@v0.1.8
 
 The latest published release is `v0.1.8`. Development checkouts may contain entries under `Unreleased`; consumers that need reproducible builds should pin a published tag or an explicit commit.
 
-**External Go dependencies: zero.** `go list -m all` contains only `github.com/frudas24/inkgo`.
+**Runtime/module dependencies: zero.** `go list -m all` from the repository root contains only `github.com/frudas24/inkgo`.
+
+The end-to-end PTY harness under `test/pty` is an intentionally separate Go module. It uses `github.com/aymanbagabas/go-pty` only for integration testing, so consumers of `inkgo` do not inherit PTY/ConPTY test dependencies.
 
 ## What it includes
 
@@ -149,6 +151,9 @@ go test -race ./...
 ./scripts/check-coverage.sh 80.0 coverage.out
 ./scripts/check-no-external-deps.sh
 ./scripts/check-version.sh
+
+# Real PTY / ConPTY end-to-end tests live in a separate module.
+(cd test/pty && go mod download && go mod verify && go test ./... && go vet ./...)
 ```
 
 Fuzz targets:
@@ -169,7 +174,7 @@ go run ./examples/embed
 go run ./examples/terminal-smoke
 ```
 
-`terminal-smoke` is intentionally interactive and exercises the host console/PTY, including the Windows raw/VT path when run from Windows Terminal or PowerShell.
+`terminal-smoke` is intentionally interactive and exercises the host console/PTY, including the Windows raw/VT path when run from Windows Terminal or PowerShell. Automated process-level terminal behavior lives in `test/pty`, where the fixture is spawned under a real Unix PTY or Windows ConPTY from outside the application.
 
 ## Documentation
 
@@ -181,6 +186,7 @@ go run ./examples/terminal-smoke
 - [`docs/validation/ROUND5.md`](docs/validation/ROUND5.md) — production-hardening evidence
 - [`docs/validation/WINDOWS_NATIVE_INPUT.md`](docs/validation/WINDOWS_NATIVE_INPUT.md) — Windows native console input and resize validation
 - [`docs/validation/POST_V0.1.7_DEEP_AUDIT.md`](docs/validation/POST_V0.1.7_DEEP_AUDIT.md) — post-v0.1.7 Windows/ANSI/Unicode deep-audit evidence
+- [`docs/validation/PTY_INTEGRATION.md`](docs/validation/PTY_INTEGRATION.md) — real PTY/ConPTY end-to-end validation and the startup-resize window
 
 ## License
 

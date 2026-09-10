@@ -25,6 +25,7 @@ inkgo/
 │   ├── textutil/             grapheme/width/wrap/tab helpers
 │   └── cmd/genapi/           reproducible root-facade generator
 ├── integration/              external-package composition tests
+├── test/pty/                 separate Go module for PTY/ConPTY end-to-end tests
 ├── examples/                 standalone/embed/manual terminal smoke
 ├── scripts/                  release/CI policy checks
 └── docs/                     architecture, migration, status, validation
@@ -115,7 +116,9 @@ Per-node text/wrap/ANSI caches retain only the latest key/value, rather than glo
 
 Linux and macOS use native termios/ioctl paths. Windows uses console mode APIs plus an exclusive `ReadConsoleInputW` pump in `Runtime.Run`: `KEY_EVENT`, `MOUSE_EVENT`, `FOCUS_EVENT` and `WINDOW_BUFFER_SIZE_EVENT` share one owner, and the pump blocks on console input plus a stop event through `WaitForMultipleObjects`. This removes periodic resize polling and prevents a resize watcher from racing key reads. All paths are CGO-free.
 
-CI executes ordinary tests/builds on Linux, macOS, and Windows. A real raw-console interaction cannot be fully proven by redirected CI streams, so `examples/terminal-smoke` exists as the release/manual check on actual terminal hosts.
+CI executes ordinary tests/builds on Linux, macOS, and Windows. `test/pty` is a separate Go module that spawns fixture binaries under a real Unix PTY or Windows ConPTY using `go-pty`, so process-level terminal lifecycle, resize, input and restoration are observed from outside the application without contaminating the published module dependency graph. The PTY module is test infrastructure only; the root `github.com/frudas24/inkgo` module remains dependency-free.
+
+A headless PTY/ConPTY still cannot synthesize every physical host-console event deterministically (notably Windows focus/mouse transitions), so `examples/terminal-smoke` remains the final manual check on actual terminal hosts.
 
 ## Compatibility rule
 
