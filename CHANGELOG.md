@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.1.11 — Unicode 17 emoji properties and width hot paths
+
 - replace the remaining coarse emoji property heuristics with compact Unicode Emoji 17.0 tables for `Emoji`, `Emoji_Presentation` and `Extended_Pictographic`; this fixes VS16 presentation for text-default emoji such as `©`, `®` and `™`, keeps non-Emoji symbols such as `⌘` narrow, separates Regional_Indicator pairing from GB11, and covers all seven Emoji 17 additions while preserving the framebuffer invariant that one grapheme occupies at most two cells;
 - restore the source fork's width hot paths without weakening Unicode semantics: pure ASCII now bypasses grapheme allocation entirely, ANSI-colored ASCII re-enters that fast path after stripping controls, and ordinary Unicode without cluster-sensitive ZWJ/VS/keycap/RI/modifier code points sums rune widths directly; validation measured ASCII at ~42 ns/0 allocs versus ~5.1 µs/55 allocs before the optimization, and ordinary mixed Unicode at ~0.9–1.0 µs/0 allocs versus ~3.2 µs/33 allocs; add permanent text-width benchmarks and fuzz-check that the simple path equals the full grapheme model whenever it is selected;
 - close the remaining ZWJ width-invariant hole for text-default Extended_Pictographic chains: valid GB11 sequences such as `☀‍☀‍☀`, `♥‍♥‍♥` and `⚠‍⚠‍⚠` remain one grapheme but are capped to the framebuffer's two-cell grapheme model instead of accumulating width 3; add direct regressions and make the fuzz target assert that every emitted grapheme width stays within 0..2;

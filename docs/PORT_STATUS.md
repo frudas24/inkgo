@@ -4,7 +4,7 @@
 
 The Go port is approximately **99% functionally equivalent for practical terminal-UI use**. Round 5 deliberately prioritized production behavior, packaging and maintainability over chasing implementation identity with JavaScript/React/Yoga internals.
 
-The project is stdlib-only, CGO-free, importable as `github.com/frudas24/inkgo`, and `v0.1.10` is publicly tagged. Development checkouts may contain additional `Unreleased` hardening.
+The project is stdlib-only, CGO-free, importable as `github.com/frudas24/inkgo`, and `v0.1.11` is publicly tagged. Development checkouts may contain additional `Unreleased` hardening.
 
 ## Closed in Round 5
 
@@ -18,7 +18,7 @@ The project is stdlib-only, CGO-free, importable as `github.com/frudas24/inkgo`,
 - bounded renderer scroll history across repeated root replacement;
 - focus-manager disabled traversal contract bug.
 
-## v0.1.7 through v0.1.10 hardening (post-v0.1.6)
+## v0.1.7 through v0.1.11 hardening (post-v0.1.6)
 
 `v0.1.7` replaces Windows console-size polling with native `ReadConsoleInputW` ownership inside `Runtime.Run`. Resize now arrives as `WINDOW_BUFFER_SIZE_EVENT`; key/mouse/focus records are preserved through the same input owner, and the blocking pump is stopped by a kernel event rather than a periodic timer.
 
@@ -28,7 +28,7 @@ The project is stdlib-only, CGO-free, importable as `github.com/frudas24/inkgo`,
 
 `v0.1.9` adds an external-observer PTY/ConPTY suite in the separate `test/pty` module, and fixes a grapheme-segmentation bug the new wrapping fuzz target found: a ZWJ chain was joined without the UAX #29 GB11 pictographic base, so a digit ZWJ run fused into a three-cell cluster that could not be wrapped and produced rows wider than the requested width. It closes a narrow Unix startup window: `SIGWINCH` handlers were installed after the initial render, so a resize landing in that gap could stay invisible until unrelated input caused another render. `Runtime.Run` now installs signal handlers before `Start`. The suite's immediate-resize test does not discriminate that reorder on its own because the harness may resize the PTY before the fixture reads its initial geometry. A dedicated internal Unix regression now blocks the first `Start` write and injects `SIGWINCH` in that exact window; reverting to the old ordering makes the regression fail, while the current ordering passes repeated runs. The PTY harness also drains final output to quiescence after process exit so restoration assertions cannot race the reader goroutine. The suite's value remains lifecycle, input and terminal-restoration coverage from outside the process, with no dependency added to the root module. See `validation/PTY_INTEGRATION.md`.
 
-The post-`v0.1.10` follow-up removes the last coarse emoji-property approximations from width/GB11 decisions. `Emoji`, `Emoji_Presentation` and `Extended_Pictographic` now use compact Unicode Emoji 17.0 property ranges, while Regional Indicators remain governed by their separate pairing rule. This closes false GB11 joins for non-pictographic symbols, fixes VS16 width for text-default emoji such as `©`/`®`/`™`, covers the seven Emoji 17 additions and directly asserts table consistency plus the 0..2-cell grapheme contract. Width measurement also regains allocation-free fast paths for ASCII and ordinary non-cluster-sensitive Unicode. Final validation reports 82.1% total statement coverage (92.1% in `internal/textutil`), green race/repetition/fuzz/PTY campaigns and five-target cross-builds. See `validation/POST_V0.1.10_FOLLOWUP.md`.
+`v0.1.11` removes the last coarse emoji-property approximations from width/GB11 decisions. `Emoji`, `Emoji_Presentation` and `Extended_Pictographic` now use compact Unicode Emoji 17.0 property ranges, while Regional Indicators remain governed by their separate pairing rule. This closes false GB11 joins for non-pictographic symbols, fixes VS16 width for text-default emoji such as `©`/`®`/`™`, covers the seven Emoji 17 additions and directly asserts table consistency plus the 0..2-cell grapheme contract. Width measurement also regains allocation-free fast paths for ASCII and ordinary non-cluster-sensitive Unicode. Final validation reports 82.1% total statement coverage (92.1% in `internal/textutil`), green race/repetition/fuzz/PTY campaigns and five-target cross-builds. See `validation/POST_V0.1.10_FOLLOWUP.md`.
 
 ## Deliberately remaining parity boundary
 
@@ -43,4 +43,4 @@ No vendor should be added merely to erase this percentage. Add complexity only w
 
 ## Release boundary
 
-The latest published tag is `v0.1.10`. New changes should remain under `Unreleased` until the next validated tag is created. Repository description/topics are GitHub metadata and are not part of source archives. See `RELEASE.md`.
+The latest published tag is `v0.1.11`. New changes should remain under `Unreleased` until the next validated tag is created. Repository description/topics are GitHub metadata and are not part of source archives. See `RELEASE.md`.
