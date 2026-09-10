@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.1.5 — resize recovery and interactive smoke
+
 - resize no longer re-enters or clears the alternate screen on every `SIGWINCH`; the runtime coalesces signal bursts into one UI event and re-reads the PTY size over a bounded retry window, so a size that lags the signal (ConPTY/WSL) is picked up without another key press or input;
 - Windows consoles deliver no `SIGWINCH`, so the runtime now polls the console size while it owns the loop and refreshes on change instead of waiting for the next keypress;
 - the `terminal-smoke` example exits on `q`, Ctrl+C or Escape and shows pasted text, making the interactive smoke escapable and paste observable;

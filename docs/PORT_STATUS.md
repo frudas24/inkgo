@@ -4,7 +4,7 @@
 
 The Go port is approximately **99% functionally equivalent for practical terminal-UI use**. Round 5 deliberately prioritized production behavior, packaging and maintainability over chasing implementation identity with JavaScript/React/Yoga internals.
 
-The project is stdlib-only, CGO-free, importable as `github.com/frudas24/inkgo`, and prepared as a `v0.1.4` release candidate.
+The project is stdlib-only, CGO-free, importable as `github.com/frudas24/inkgo`, and prepared as a `v0.1.5` release candidate.
 
 ## Closed in Round 5
 
@@ -31,4 +31,4 @@ No vendor should be added merely to erase this percentage. Add complexity only w
 
 ## Release boundary
 
-The source tree can be validated locally, but `v0.1.4` does not exist for consumers until the validated commit is pushed and the Git tag is published. Repository description/topics are GitHub metadata and are not part of the source archive. See `RELEASE.md`.
+The source tree can be validated locally, but `v0.1.5` does not exist for consumers until the validated commit is pushed and the Git tag is published. Repository description/topics are GitHub metadata and are not part of the source archive. See `RELEASE.md`.
