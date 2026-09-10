@@ -20,7 +20,7 @@ func main() {
 				Width:         layout.Percent(100),
 				PaddingX:      layout.I(1),
 			},
-			widgets.Text("reopencode", render.TextStyle{Bold: true}),
+			widgets.Text("inkgo", render.TextStyle{Bold: true}),
 			status,
 		),
 	)

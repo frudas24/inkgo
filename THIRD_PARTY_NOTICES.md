@@ -8,10 +8,10 @@ License, Copyright (c) 2015-2019 Vadim Demedes and Ink contributors.
 
 The MIT notice for the derived portions is reproduced in [`LICENSE`](LICENSE).
 
-## reopencode customized Ink fork
+## Customized Ink fork (ported reference)
 
-The behavior ported here was audited against a *customized Ink fork* shipped
-inside the **reopencode** project (`src/ink/`, supplied 2026-09-09). That fork:
+The behavior ported here was audited against a *customized Ink fork* supplied
+as a `src/ink/` tree (reference snapshot 2026-09-09). That fork:
 
 - contains the upstream Ink core (MIT) **without** carrying a `LICENSE` file,
   license field or copyright headers; and
@@ -27,7 +27,7 @@ code. See `SOURCE_AUDIT.md` and `PORT_STATUS.md` for the audited boundaries.
 
 ### Outstanding clarification
 
-The customizations contributed by the reopencode fork do not carry an explicit
-license. Before any use that relies on those specific behaviors, obtain a
-license declaration for that fork (or a written permission for this port).
-This notice exists so downstream users can evaluate that chain explicitly.
+The customizations contributed by that fork do not carry an explicit license.
+Before any use that relies on those specific behaviors, obtain a license
+declaration for the fork (or a written permission for this port). This notice
+exists so downstream users can evaluate that chain explicitly.

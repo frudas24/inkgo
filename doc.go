@@ -1,4 +1,4 @@
-// Package ink is a native Go rewrite of reopencode's customized Ink TUI core.
+// Package ink is a native Go rewrite of a customized Ink terminal-UI core.
 //
 // It deliberately does not embed Node.js or emulate React. The host tree is a
 // concrete Go Node tree that callers can mutate through stable references.

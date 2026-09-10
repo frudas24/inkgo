@@ -1,8 +1,8 @@
-# reopencode TUI — native Go port
+# inkgo — native Go terminal UI (Ink-style)
 
 A native, dependency-free Go rewrite of the customized Ink TUI supplied on 2026-09-09. It is **not** a Node/React wrapper: no Node, Bun, React, Yoga binding, `bidi-js`, sidecar or runtime vendor tree is required.
 
-The port preserves the behavior useful to reopencode while using Go-native ownership: concrete `*Node` trees, explicit state mutation, flex layout, cell rendering, incremental terminal diffs and an embeddable runtime.
+The port preserves the behavior useful to applications while using Go-native ownership: concrete `*Node` trees, explicit state mutation, flex layout, cell rendering, incremental terminal diffs and an embeddable runtime.
 
 ## Current functionality
 
@@ -121,6 +121,6 @@ See `ARCHITECTURE.md` for package boundaries, `MIGRATION.md` for TS/React-to-Go 
 ## License
 
 MIT — see [`LICENSE`](LICENSE). This library is a native Go port of Ink
-(MIT, Vadim Demedes) via reopencode's customized Ink fork; see
+(MIT, Vadim Demedes) via a customized Ink fork; see
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for the full lineage and
 the outstanding clarification about the fork's undeclared customizations.
