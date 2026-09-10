@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.1.2 — release hygiene
+
+- fixed public release documentation that still pointed consumers at `v0.1.0` after `v0.1.1` was published;
+- fixed `MANIFEST.sha256` generation so ignored/generated `coverage.out` is never listed in a clean source manifest;
+- added reproducible manifest update/check scripts and a CI policy gate so a manifest cannot reference files absent from a clean checkout;
+- retained zero external Go modules and made no runtime/API behavior changes.
+
 ## Round 5 — 2026-09-09
 
 - changed the canonical module path to `github.com/frudas24/inkgo` and prepared source version `0.1.0`;

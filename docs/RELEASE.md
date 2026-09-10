@@ -1,6 +1,6 @@
 # Release checklist
 
-This tree is prepared as the **v0.1.0 release candidate**. Publishing the remote Git tag is a repository action and is intentionally separate from building the source ZIP.
+This tree is prepared as the **v0.1.2 release candidate**. Publishing the remote Git tag is a repository action and is intentionally separate from building the source ZIP.
 
 ## Before tagging
 
@@ -14,6 +14,8 @@ go test -race ./...
 ./scripts/check-coverage.sh 74.0 coverage.out
 ./scripts/check-no-external-deps.sh
 ./scripts/check-version.sh
+./scripts/update-manifest.sh
+./scripts/check-manifest.sh
 go run ./examples/terminal-smoke
 ```
 
@@ -24,15 +26,15 @@ Run the final interactive smoke on at least one real Windows Terminal/PowerShell
 After the validated tree is committed to `main`:
 
 ```bash
-git tag -a v0.1.0 -m "inkgo v0.1.0"
-git push origin v0.1.0
+git tag -a v0.1.2 -m "inkgo v0.1.2"
+git push origin v0.1.2
 ```
 
 Then verify:
 
 ```bash
-go list -m github.com/frudas24/inkgo@v0.1.0
-go get github.com/frudas24/inkgo@v0.1.0
+go list -m github.com/frudas24/inkgo@v0.1.2
+go get github.com/frudas24/inkgo@v0.1.2
 ```
 
 ## Suggested GitHub metadata
@@ -49,4 +51,4 @@ Stars are a community metric, not a release-readiness requirement.
 
 ## License / provenance
 
-The supplied TypeScript source archive did not contain a license file. Before publishing a public `v0.1.0` tag, verify the licensing/provenance obligations of the upstream/customized Ink source and add the appropriate license/attribution. This source tree intentionally does not invent a license on the author's behalf.
+The supplied TypeScript source archive did not contain a license file. Before publishing a public `v0.1.2` tag, verify the licensing/provenance obligations of the upstream/customized Ink source and add the appropriate license/attribution. This source tree intentionally does not invent a license on the author's behalf.

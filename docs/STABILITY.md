@@ -1,6 +1,6 @@
 # API stability
 
-The source tree is prepared for the first semantic release, `v0.1.0`.
+The source tree is prepared for the first semantic release, `v0.1.2`.
 
 ## Public surface
 

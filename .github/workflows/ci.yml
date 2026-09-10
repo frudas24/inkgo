@@ -61,6 +61,7 @@ jobs:
           cache: false
       - run: ./scripts/check-no-external-deps.sh
       - run: ./scripts/check-version.sh
+      - run: ./scripts/check-manifest.sh
       - run: go generate ./...
       - run: git diff --exit-code -- api.go
 
