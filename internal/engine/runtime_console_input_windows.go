@@ -45,7 +45,10 @@ func signalWindowsEvent(handle syscall.Handle) {
 }
 
 func waitConsoleOrStop(console, stop syscall.Handle) (bool, error) {
-	handles := [...]syscall.Handle{console, stop}
+	// Stop must be first. WaitForMultipleObjects returns the lowest-index
+	// signaled object when several are ready; prioritizing stop prevents a
+	// buffered console event from being consumed after shutdown was requested.
+	handles := [...]syscall.Handle{stop, console}
 	r, _, err := procWaitForMultipleObjects.Call(
 		uintptr(len(handles)),
 		uintptr(unsafe.Pointer(&handles[0])),
@@ -54,9 +57,9 @@ func waitConsoleOrStop(console, stop syscall.Handle) (bool, error) {
 	)
 	switch r {
 	case waitObject0:
-		return true, nil
-	case waitObject0 + 1:
 		return false, nil
+	case waitObject0 + 1:
+		return true, nil
 	case waitFailed:
 		if err == syscall.Errno(0) {
 			err = syscall.EINVAL

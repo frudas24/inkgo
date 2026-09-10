@@ -31,82 +31,114 @@ func TruncateText(text string, columns int, position core.TextWrap) string {
 	}
 }
 
+type wrapWord struct {
+	tokens []terminalToken
+	width  int
+}
+
+func splitWrapWords(line string) []wrapWord {
+	words := []wrapWord{{}}
+	for _, tok := range terminalTokens(line) {
+		if !tok.escape && tok.text == " " {
+			words = append(words, wrapWord{})
+			continue
+		}
+		last := &words[len(words)-1]
+		last.tokens = append(last.tokens, tok)
+		last.width += tok.width
+	}
+	return words
+}
+
+func appendWrappedWord(rows *[][]terminalToken, word wrapWord, width int, rowWidth int) int {
+	for i, tok := range word.tokens {
+		if tok.width > 0 && rowWidth > 0 && rowWidth+tok.width > width {
+			*rows = append(*rows, nil)
+			rowWidth = 0
+		}
+		last := len(*rows) - 1
+		(*rows)[last] = append((*rows)[last], tok)
+		rowWidth += tok.width
+		if rowWidth == width && i < len(word.tokens)-1 {
+			*rows = append(*rows, nil)
+			rowWidth = 0
+		}
+	}
+	// Do not leave a row containing only zero-width escape sequences after a
+	// hard split. Keeping them on the preceding row matches wrap-ansi's
+	// zero-width token behavior and avoids synthetic empty visual lines.
+	if rowWidth == 0 && len(*rows) > 1 {
+		last := len(*rows) - 1
+		if len((*rows)[last]) > 0 && tokensWidth((*rows)[last]) == 0 {
+			(*rows)[last-1] = append((*rows)[last-1], (*rows)[last]...)
+			*rows = (*rows)[:last]
+		}
+	}
+	if len(*rows) == 0 {
+		*rows = append(*rows, nil)
+	}
+	return tokensWidth((*rows)[len(*rows)-1])
+}
+
+// hardWrapLine mirrors wrap-ansi with {hard:true, wordWrap:true}. Escape
+// sequences are zero-width atomic tokens, tabs are expanded to 8-column stops,
+// and trim mode removes leading/trailing spaces from every visual row.
 func hardWrapLine(line string, width int, trim bool) []string {
 	if width <= 0 {
 		return []string{""}
 	}
-	if StringWidth(line) <= width {
-		if trim {
-			line = strings.TrimRight(line, " \t")
-		}
-		return []string{line}
+	line = ExpandTabs(line, 0)
+	if trim && strings.TrimSpace(StripANSI(line)) == "" {
+		return []string{""}
 	}
-	gs := Graphemes(line)
-	var lines []string
-	var b strings.Builder
-	current := 0
-	lastSpaceByte := -1
-	lastSpaceWidth := 0
 
-	flush := func(forceWord bool) {
-		s := b.String()
-		if !forceWord && lastSpaceByte >= 0 {
-			head := s[:lastSpaceByte]
-			tail := strings.TrimLeft(s[lastSpaceByte:], " \t")
-			if trim {
-				head = strings.TrimRight(head, " \t")
-			}
-			lines = append(lines, head)
-			b.Reset()
-			b.WriteString(tail)
-			current = StringWidth(tail)
+	words := splitWrapWords(line)
+	rows := [][]terminalToken{{}}
+	rowWidth := 0
+	firstWord := true
+
+	for _, word := range words {
+		if firstWord {
+			firstWord = false
 		} else {
-			if trim {
-				s = strings.TrimRight(s, " \t")
+			if rowWidth >= width && !trim {
+				rows = append(rows, nil)
+				rowWidth = 0
 			}
-			lines = append(lines, s)
-			b.Reset()
-			current = 0
+			if rowWidth > 0 || !trim {
+				rows[len(rows)-1] = append(rows[len(rows)-1], terminalToken{text: " ", width: 1})
+				rowWidth++
+			}
 		}
-		lastSpaceByte = -1
-		lastSpaceWidth = 0
-	}
 
-	for _, g := range gs {
-		if g.Text == "\t" {
-			g.Text = "    "
-			g.Width = 4
-		}
-		if current+g.Width > width && b.Len() > 0 {
-			flush(lastSpaceByte < 0)
-		}
-		if g.Width > width && b.Len() == 0 {
-			// A glyph wider than the viewport cannot be split. Emit it so cell
-			// clipping decides what is visible rather than looping forever.
-			b.WriteString(g.Text)
-			current += g.Width
-			flush(true)
+		if word.width > width {
+			remaining := width - rowWidth
+			breaksStartingThisLine := 1 + (word.width-remaining-1)/width
+			breaksStartingNextLine := (word.width - 1) / width
+			if breaksStartingNextLine < breaksStartingThisLine {
+				rows = append(rows, nil)
+				rowWidth = 0
+			}
+			rowWidth = appendWrappedWord(&rows, word, width, rowWidth)
 			continue
 		}
-		if g.Text == " " || g.Text == "\t" {
-			lastSpaceByte = b.Len()
-			lastSpaceWidth = current
-			_ = lastSpaceWidth
+
+		if rowWidth+word.width > width && rowWidth > 0 && word.width > 0 {
+			rows = append(rows, nil)
+			rowWidth = 0
 		}
-		b.WriteString(g.Text)
-		current += g.Width
-		if current == width {
-			flush(true)
-		}
+		rows[len(rows)-1] = append(rows[len(rows)-1], word.tokens...)
+		rowWidth += word.width
 	}
-	if b.Len() > 0 || len(lines) == 0 {
-		s := b.String()
+
+	out := make([]string, len(rows))
+	for i, row := range rows {
 		if trim {
-			s = strings.TrimRight(s, " \t")
+			row = visibleTrimSpacesRight(row)
 		}
-		lines = append(lines, s)
+		out[i] = tokensString(row)
 	}
-	return lines
+	return out
 }
 
 // WrapText mirrors Ink's wrap / wrap-trim / truncate-* behavior.
@@ -115,6 +147,7 @@ func WrapText(text string, maxWidth int, mode core.TextWrap) string {
 	if maxWidth < 0 {
 		maxWidth = 0
 	}
+	text = strings.ReplaceAll(text, "\r\n", "\n")
 	switch mode {
 	case core.TextWrapTruncate, core.TextWrapTruncateEnd, core.TextWrapTruncateMiddle, core.TextWrapTruncateStart:
 		lines := strings.Split(text, "\n")
@@ -154,6 +187,7 @@ func WrapTextLines(text string, maxWidth int, mode core.TextWrap) ([]string, []b
 	if maxWidth < 0 {
 		maxWidth = 0
 	}
+	text = strings.ReplaceAll(text, "\r\n", "\n")
 	if mode == core.TextWrapTruncate || mode == core.TextWrapTruncateEnd || mode == core.TextWrapTruncateMiddle || mode == core.TextWrapTruncateStart || (mode != core.TextWrapWrap && mode != core.TextWrapTrim && mode != "") {
 		lines := strings.Split(WrapText(text, maxWidth, mode), "\n")
 		return lines, make([]bool, len(lines))

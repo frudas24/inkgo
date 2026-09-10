@@ -4,6 +4,7 @@ package engine
 
 import (
 	"encoding/binary"
+	"syscall"
 	"testing"
 	"unsafe"
 )
@@ -34,5 +35,50 @@ func TestDecodeConsoleInputRecordPayloads(t *testing.T) {
 	mouse := decodeConsoleMouse(mouseData)
 	if mouse.X != 11 || mouse.Y != 7 || mouse.Buttons != 1 || mouse.EventFlags != consoleMouseMoved {
 		t.Fatalf("decoded mouse = %#v", mouse)
+	}
+}
+
+func TestWaitConsoleOrStopPrioritizesStop(t *testing.T) {
+	console, err := createWindowsEvent()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer syscall.CloseHandle(console)
+	stop, err := createWindowsEvent()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer syscall.CloseHandle(stop)
+
+	// When both handles are signaled, stop must win. WaitForMultipleObjects
+	// resolves ties by the lowest array index, so this protects unread console
+	// input from being consumed during shutdown.
+	signalWindowsEvent(console)
+	signalWindowsEvent(stop)
+	ready, err := waitConsoleOrStop(console, stop)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ready {
+		t.Fatal("console input won over an already-signaled stop event")
+	}
+}
+
+func TestWaitConsoleOrStopDistinguishesConsoleAndStop(t *testing.T) {
+	console, err := createWindowsEvent()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer syscall.CloseHandle(console)
+	stop, err := createWindowsEvent()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer syscall.CloseHandle(stop)
+
+	signalWindowsEvent(console)
+	ready, err := waitConsoleOrStop(console, stop)
+	if err != nil || !ready {
+		t.Fatalf("console-only wait: ready=%v err=%v", ready, err)
 	}
 }

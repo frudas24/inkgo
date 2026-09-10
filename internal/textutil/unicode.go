@@ -59,14 +59,31 @@ func StripANSI(s string) string {
 				i++
 			}
 		default:
-			// ESC + intermediate(s) + final.
-			i += 2
-			for i < len(s) && s[i] >= 0x20 && s[i] <= 0x2f {
-				i++
+			// Generic 7-bit ESC sequence. The byte immediately after ESC may
+			// already be the final byte (ESC Fe, 0x30..0x7e). Only scan a
+			// following final when that first byte is an intermediate
+			// (0x20..0x2f). The old code always advanced past the second byte
+			// and could therefore swallow one visible character after a
+			// two-byte sequence such as ESC 0.
+			j := i + 1
+			if s[j] >= 0x30 && s[j] <= 0x7e {
+				i = j + 1
+				break
 			}
-			if i < len(s) && s[i] >= 0x30 && s[i] <= 0x7e {
-				i++
+			if s[j] >= 0x20 && s[j] <= 0x2f {
+				j++
+				for j < len(s) && s[j] >= 0x20 && s[j] <= 0x2f {
+					j++
+				}
+				if j < len(s) && s[j] >= 0x30 && s[j] <= 0x7e {
+					j++
+				}
+				i = j
+				break
 			}
+			// Unknown/incomplete ESC form: drop only ESC itself and let the
+			// following byte be processed normally.
+			i++
 		}
 	}
 	return b.String()
@@ -236,22 +253,47 @@ func SliceByWidth(s string, start, end int) string {
 	if end <= start || s == "" {
 		return ""
 	}
+	tokens := terminalTokens(s)
 	var b strings.Builder
 	pos := 0
-	for _, g := range Graphemes(s) {
-		next := pos + g.Width
-		if g.Width == 0 {
+	started := false
+	var prefix strings.Builder
+	for _, tok := range tokens {
+		if tok.escape {
+			if pos < start && !started {
+				// Preserve the escape history needed to reproduce active styling at
+				// the slice boundary. This is intentionally emitted only if the
+				// slice later contains visible content.
+				prefix.WriteString(tok.text)
+			} else if pos < end {
+				if !started {
+					b.WriteString(prefix.String())
+					started = true
+				}
+				b.WriteString(tok.text)
+			}
+			continue
+		}
+		next := pos + tok.width
+		if tok.width == 0 {
 			if pos >= start && pos < end {
-				b.WriteString(g.Text)
+				if !started {
+					b.WriteString(prefix.String())
+					started = true
+				}
+				b.WriteString(tok.text)
 			}
 			continue
 		}
 		if pos >= start && next <= end {
-			b.WriteString(g.Text)
-		} else if pos < end && next > start {
-			// Wide glyph straddling a boundary is intentionally omitted; this
-			// matches the fork's "sliceFit" invariant of never overshooting.
+			if !started {
+				b.WriteString(prefix.String())
+				started = true
+			}
+			b.WriteString(tok.text)
 		}
+		// Wide glyphs straddling a boundary are omitted, matching the fork's
+		// sliceFit invariant of never overshooting the requested cell range.
 		pos = next
 		if pos >= end {
 			break

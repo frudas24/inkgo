@@ -14,6 +14,7 @@ import (
 type consoleInputEncoder struct {
 	pendingHighSurrogate uint16
 	mouseButtons         uint32
+	wheelRemainder       int
 }
 
 type consoleKeyEvent struct {
@@ -149,11 +150,22 @@ func (e *consoleInputEncoder) runesFromUTF16(w uint16) []rune {
 	return []rune{rune(w)}
 }
 
-func encodeConsoleRune(r rune, modifier int, altGr, ctrl, alt bool) string {
-	// Ctrl+A..Ctrl+Z already arrives as a C0 codepoint. Preserve the byte
-	// because keyFromText maps it directly to the expected Ctrl key.
-	if r > 0 && r < 0x20 && ctrl && !alt {
-		return string(r)
+func encodeConsoleRune(r rune, modifier int, altGr, ctrl, alt, shift bool) string {
+	// Plain Ctrl+A..Ctrl+Z already arrives as a C0 codepoint. Preserve the
+	// byte for compatibility with ordinary terminal input. When extra
+	// modifiers are present, however, the raw C0 byte cannot carry them, so
+	// reconstruct the printable base letter and use CSI-u instead.
+	if r > 0 && r < 0x20 && ctrl {
+		if !alt && !shift {
+			return string(r)
+		}
+		if r >= 1 && r <= 26 {
+			base := rune('a') + r - 1
+			if shift {
+				base = rune('A') + r - 1
+			}
+			return csiU(int(base), modifier)
+		}
 	}
 	if modifier == 1 || altGr {
 		return string(r)
@@ -181,7 +193,7 @@ func (e *consoleInputEncoder) key(event consoleKeyEvent) []byte {
 			// AltGr is reported as RightAlt+Ctrl on Windows. When it produced a
 			// printable Unicode character, it is text input, not an Alt+Ctrl chord.
 			altGr := event.Control&consoleRightAltPressed != 0 && ctrl && r >= 0x20
-			out = appendRepeated(out, encodeConsoleRune(r, modifier, altGr, ctrl, alt), repeat)
+			out = appendRepeated(out, encodeConsoleRune(r, modifier, altGr, ctrl, alt, shift), repeat)
 		}
 		return out
 	}
@@ -277,11 +289,22 @@ func (e *consoleInputEncoder) mouse(event consoleMouseEvent) []byte {
 	}
 	mods := mouseModifierBits(event.Control)
 	if event.EventFlags&consoleMouseWheeled != 0 {
-		button := 64
-		if signedHighWord(event.Buttons) < 0 {
-			button = 65
+		// Windows reports wheel distance in multiples or fractions of
+		// WHEEL_DELTA (120). Accumulate sub-deltas and emit one terminal wheel
+		// event for each complete increment instead of over/under-scrolling.
+		e.wheelRemainder += int(signedHighWord(event.Buttons))
+		steps := e.wheelRemainder / 120
+		e.wheelRemainder %= 120
+		if steps == 0 {
+			return nil
 		}
-		return []byte(sgrMouseSequence(button|mods, col, row, false))
+		button := 64
+		if steps < 0 {
+			button = 65
+			steps = -steps
+		}
+		seq := sgrMouseSequence(button|mods, col, row, false)
+		return appendRepeated(nil, seq, uint16(steps))
 	}
 	// Horizontal wheel is not part of the current public parser contract.
 	if event.EventFlags&consoleMouseHWheeled != 0 {

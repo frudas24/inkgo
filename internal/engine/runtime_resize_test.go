@@ -128,3 +128,121 @@ func TestNativeSpecialKeySequencesAreComplete(t *testing.T) {
 		}
 	}
 }
+
+func TestConsoleInputEncoderCombinedControlModifiers(t *testing.T) {
+	cases := []struct {
+		name  string
+		event consoleKeyEvent
+		want  Key
+	}{
+		{
+			name:  "ctrl-shift-letter",
+			event: consoleKeyEvent{Down: true, Repeat: 1, VirtualKey: 'C', Unicode: 3, Control: consoleLeftCtrlPressed | consoleShiftPressed},
+			want:  Key{Name: "c", Text: "C", Ctrl: true, Shift: true},
+		},
+		{
+			name:  "ctrl-alt-letter",
+			event: consoleKeyEvent{Down: true, Repeat: 1, VirtualKey: 'C', Unicode: 3, Control: consoleLeftCtrlPressed | consoleLeftAltPressed},
+			want:  Key{Name: "c", Text: "c", Ctrl: true, Alt: true, Meta: true},
+		},
+		{
+			name:  "shift-backspace",
+			event: consoleKeyEvent{Down: true, Repeat: 1, VirtualKey: consoleVKBack, Unicode: '\b', Control: consoleShiftPressed},
+			want:  Key{Name: "backspace", Shift: true},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var encoder consoleInputEncoder
+			got := parseNativeBytes(t, encoder.key(tc.event))
+			if len(got) != 1 || got[0].Kind != InputKey {
+				t.Fatalf("parsed = %#v", got)
+			}
+			key := got[0].Key
+			if key.Name != tc.want.Name || key.Text != tc.want.Text || key.Ctrl != tc.want.Ctrl || key.Alt != tc.want.Alt || key.Meta != tc.want.Meta || key.Shift != tc.want.Shift {
+				t.Fatalf("key = %#v, want %#v", key, tc.want)
+			}
+		})
+	}
+}
+
+func TestConsoleInputEncoderWheelDeltaAccumulation(t *testing.T) {
+	wheel := func(delta int16) consoleMouseEvent {
+		return consoleMouseEvent{X: 1, Y: 1, Buttons: uint32(uint16(delta)) << 16, EventFlags: consoleMouseWheeled}
+	}
+
+	var encoder consoleInputEncoder
+	if got := encoder.mouse(wheel(60)); len(got) != 0 {
+		t.Fatalf("half wheel delta emitted early: %q", got)
+	}
+	got := parseNativeBytes(t, encoder.mouse(wheel(60)))
+	if len(got) != 1 || got[0].Key.Name != "wheelup" {
+		t.Fatalf("two half deltas = %#v", got)
+	}
+
+	encoder = consoleInputEncoder{}
+	got = parseNativeBytes(t, encoder.mouse(wheel(240)))
+	if len(got) != 2 || got[0].Key.Name != "wheelup" || got[1].Key.Name != "wheelup" {
+		t.Fatalf("+240 delta = %#v", got)
+	}
+
+	encoder = consoleInputEncoder{}
+	got = parseNativeBytes(t, encoder.mouse(wheel(-240)))
+	if len(got) != 2 || got[0].Key.Name != "wheeldown" || got[1].Key.Name != "wheeldown" {
+		t.Fatalf("-240 delta = %#v", got)
+	}
+
+	encoder = consoleInputEncoder{}
+	if got := encoder.mouse(wheel(60)); len(got) != 0 {
+		t.Fatalf("positive half delta emitted early: %q", got)
+	}
+	if got := encoder.mouse(wheel(-60)); len(got) != 0 {
+		t.Fatalf("opposite half delta should cancel: %q", got)
+	}
+}
+
+func TestConsoleInputEncoderLetterModifierMatrix(t *testing.T) {
+	for ch := 'A'; ch <= 'Z'; ch++ {
+		for mask := 0; mask < 8; mask++ {
+			shift := mask&1 != 0
+			alt := mask&2 != 0
+			ctrl := mask&4 != 0
+			// Plain Ctrl+C0 aliases are intentionally terminal-compatible (for
+			// example Ctrl+H is indistinguishable from Backspace on a byte stream).
+			// Combined modifiers use CSI-u and must preserve their full identity.
+			if ctrl && !shift && !alt {
+				continue
+			}
+			var control uint32
+			if shift {
+				control |= consoleShiftPressed
+			}
+			if alt {
+				control |= consoleLeftAltPressed
+			}
+			if ctrl {
+				control |= consoleLeftCtrlPressed
+			}
+			unicode := uint16(ch + ('a' - 'A'))
+			if shift {
+				unicode = uint16(ch)
+			}
+			if ctrl {
+				unicode = uint16(ch - 'A' + 1)
+			}
+			var encoder consoleInputEncoder
+			got := parseNativeBytes(t, encoder.key(consoleKeyEvent{
+				Down: true, Repeat: 1, VirtualKey: uint16(ch), Unicode: unicode, Control: control,
+			}))
+			if len(got) != 1 || got[0].Kind != InputKey {
+				t.Fatalf("%c mask=%d parsed=%#v", ch, mask, got)
+			}
+			key := got[0].Key
+			wantName := string(ch + ('a' - 'A'))
+			if key.Name != wantName || key.Shift != shift || key.Alt != alt || key.Ctrl != ctrl {
+				t.Fatalf("%c mask=%d key=%#v want name=%q shift=%v alt=%v ctrl=%v", ch, mask, key, wantName, shift, alt, ctrl)
+			}
+		}
+	}
+}

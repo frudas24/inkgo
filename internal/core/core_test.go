@@ -86,3 +86,39 @@ func TestStyleDefaultsAndHelpers(t *testing.T) {
 		t.Fatal("gap helpers")
 	}
 }
+
+func TestCorePublicHelpersAndNumericEdges(t *testing.T) {
+	if got := ANSIColor(3); got.Kind != ColorANSI || got.ANSI != 3 {
+		t.Fatalf("ANSIColor=%+v", got)
+	}
+	if !(TextStyle{}).IsZero() || (TextStyle{Bold: true}).IsZero() {
+		t.Fatal("TextStyle.IsZero")
+	}
+	if p := B(true); p == nil || !*p {
+		t.Fatal("B helper")
+	}
+	lo, hi := 2.0, 4.0
+	if got := clampFloat(1, &lo, &hi); got != 2 {
+		t.Fatalf("clamp low=%v", got)
+	}
+	if got := clampFloat(5, &lo, &hi); got != 4 {
+		t.Fatalf("clamp high=%v", got)
+	}
+	if got := roundCell(2.6); got != 3 {
+		t.Fatalf("round=%d", got)
+	}
+}
+
+func TestBorderAndDirectionalGapOverrides(t *testing.T) {
+	border := BorderSingle
+	falseValue := false
+	s := Style{BorderStyle: &border, BorderTop: &falseValue, BorderLeft: &falseValue}
+	if got := BorderEdges(s); got != (Edges{Top: 0, Right: 1, Bottom: 1, Left: 0}) {
+		t.Fatalf("border edges=%+v", got)
+	}
+	row, col, all := 2, 3, 9
+	s = Style{RowGap: &row, ColumnGap: &col, Gap: &all}
+	if GapMain(s, Row) != 3 || GapCross(s, Row) != 2 || GapMain(s, Column) != 2 || GapCross(s, Column) != 3 {
+		t.Fatalf("directional gaps row=%d/%d column=%d/%d", GapMain(s, Row), GapCross(s, Row), GapMain(s, Column), GapCross(s, Column))
+	}
+}

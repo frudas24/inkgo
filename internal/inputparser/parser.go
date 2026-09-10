@@ -200,6 +200,8 @@ func mouseMods(v int) modifierFlags {
 }
 func keycodeName(cp int) string {
 	switch cp {
+	case 8:
+		return "backspace"
 	case 9:
 		return "tab"
 	case 13:
