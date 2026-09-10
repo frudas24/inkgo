@@ -1,5 +1,26 @@
 # Changelog
 
+## Round 5 — 2026-09-09
+
+- changed the canonical module path to `github.com/frudas24/inkgo` and prepared source version `0.1.0`;
+- moved stateful implementation out of the repository root into `internal/engine`; root is now a generated compatibility facade;
+- added reproducible `go generate` tooling for `api.go` plus generator-drift CI enforcement;
+- moved detailed project documents under `docs/` and cross-package smoke tests under `integration/`;
+- added package-local tests across every public domain plus direct tests for internal leaf packages; total measured statement coverage reached 75.0%;
+- added GitHub Actions CI executing tests/vet/builds on Linux, macOS and Windows, plus Linux race, coverage gate, dependency/version policy and fuzz smoke jobs;
+- added a manual real-console `examples/terminal-smoke` for raw/VT lifecycle validation, especially Windows Terminal/PowerShell;
+- split layout-dirty from paint/scroll-dirty state and added stable-layout reuse;
+- optimized certified linear vertical ScrollBox painting to binary-search and render only the visible child range;
+- reduced a 10,000-row warm-scroll benchmark from the pre-optimization ~122 ms/frame class to ~0.62 ms/frame on the validation host while keeping first materialized layout O(n);
+- added large-history stress tests, cache-churn tests and detached-scroll-state retention regression coverage;
+- indexed scroll/button nodes as layout metadata to remove repeated full-tree control scans from hot scroll frames;
+- added a reusable renderer scratch framebuffer so fullscreen `SU/SD` simulation no longer allocates a full screen clone per frame;
+- improved the final 10k-row warm-scroll benchmark to ~0.114 ms/frame and ~6.7 KB/frame on the validation host;
+- fixed disabled focus traversal returning nodes that were not actually focused;
+- fixed a real `scheduler.Clock.Every` data race discovered by the full race campaign and made shared-clock subscriber ticks non-reentrant;
+- added idiomatic `selection.New()` while preserving zero-value selection semantics;
+- retained zero external Go modules, zero vendor code and CGO-free cross-platform builds.
+
 ## Round 4 — 2026-09-09
 
 - fixed flex-wrap main-axis margin selection for column/column-reverse layouts;

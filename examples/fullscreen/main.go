@@ -4,39 +4,39 @@ import (
 	"fmt"
 	"os"
 
-	inkgo "github.com/frudas24/inkgo"
+	ink "github.com/frudas24/inkgo"
 )
 
 func main() {
 	count := 0
-	label := inkgo.Text("count: 0")
-	button := inkgo.ButtonWithState(
-		inkgo.Style{BorderStyle: &inkgo.BorderRound, PaddingX: inkgo.I(1)},
+	label := ink.Text("count: 0")
+	button := ink.ButtonWithState(
+		ink.Style{BorderStyle: &ink.BorderRound, PaddingX: ink.I(1)},
 		func() {
 			count++
 			label.SetText(fmt.Sprintf("count: %d", count))
 		},
-		func(state inkgo.ButtonState) []*inkgo.Node {
-			style := inkgo.TextStyle{}
+		func(state ink.ButtonState) []*ink.Node {
+			style := ink.TextStyle{}
 			if state.Focused {
 				style.Bold = true
 			}
-			return []*inkgo.Node{inkgo.Text(" increment ", style)}
+			return []*ink.Node{ink.Text(" increment ", style)}
 		},
 	)
 
-	root := inkgo.Root(inkgo.AlternateScreen(
-		inkgo.Box(inkgo.Style{FlexDirection: inkgo.Column, Gap: inkgo.I(1), Padding: inkgo.I(1)}, label, button),
+	root := ink.Root(ink.AlternateScreen(
+		ink.Box(ink.Style{FlexDirection: ink.Column, Gap: ink.I(1), Padding: ink.I(1)}, label, button),
 	))
 
-	term := inkgo.DefaultTerminal()
-	rt := inkgo.NewRuntime(root, term.In, term.Out, inkgo.RenderOptions{
+	term := ink.DefaultTerminal()
+	rt := ink.NewRuntime(root, term.In, term.Out, ink.RenderOptions{
 		Fullscreen:         true,
-		SynchronizedOutput: inkgo.SupportsSynchronizedOutput(),
+		SynchronizedOutput: ink.SupportsSynchronizedOutput(),
 		HideCursor:         true,
 	})
 	rt.Terminal = &term
-	root.SetHandlers(inkgo.EventHandlers{OnKeyDown: func(e *inkgo.KeyboardEvent) {
+	root.SetHandlers(ink.EventHandlers{OnKeyDown: func(e *ink.KeyboardEvent) {
 		if e.Key.Name == "q" || (e.Key.Ctrl && e.Key.Name == "c") {
 			rt.Stop()
 		}

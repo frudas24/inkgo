@@ -4,4 +4,6 @@
 // concrete Go Node tree that callers can mutate through stable references.
 // Layout, terminal-cell rendering, incremental diffs, input parsing, focus,
 // mouse interaction, scroll boxes, selection and ANSI handling are native Go.
-package inkgo
+//go:generate go run ./internal/cmd/genapi
+
+package ink

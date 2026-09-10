@@ -26,3 +26,8 @@ var (
 	ApplySearch        = tui.ApplySearchHighlight
 	ApplyPositioned    = tui.ApplyPositionedHighlight
 )
+
+// New returns an empty selection state ready for Start/SelectWordAt/SelectLineAt.
+// Selection also has useful zero-value semantics; New is provided for callers
+// that prefer pointer-oriented construction when wiring renderer/runtime state.
+func New() *State { return &State{} }

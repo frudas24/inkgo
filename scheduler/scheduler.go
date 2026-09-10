@@ -17,6 +17,7 @@ type Clock struct {
 	start        time.Time
 	tickTime     time.Duration
 	timer        *time.Timer
+	ticking      bool
 	closed       bool
 	nextID       uint64
 	subscribers  map[uint64]clockSubscriber
@@ -170,7 +171,7 @@ func (c *Clock) updateTimerLocked() {
 }
 
 func (c *Clock) restartTimerLocked() {
-	if c.closed || !c.hasKeepAliveLocked() {
+	if c.closed || c.ticking || !c.hasKeepAliveLocked() {
 		return
 	}
 	if c.timer != nil {
@@ -187,6 +188,12 @@ func (c *Clock) tick() {
 		c.mu.Unlock()
 		return
 	}
+	// The timer that invoked this method has fired. Mark the clock as ticking
+	// and do not arm another timer until all callbacks finish. Besides making
+	// Every's accumulator race-free, this guarantees that a slow subscriber
+	// can never be re-entered by a later shared-clock tick.
+	c.timer = nil
+	c.ticking = true
 	c.ensureStartedLocked()
 	c.tickTime = time.Since(c.start)
 	now := c.tickTime
@@ -194,12 +201,18 @@ func (c *Clock) tick() {
 	for _, sub := range c.subscribers {
 		callbacks = append(callbacks, sub.fn)
 	}
-	c.timer = time.AfterFunc(c.interval, c.tick)
 	c.mu.Unlock()
 
 	for _, fn := range callbacks {
 		fn(now)
 	}
+
+	c.mu.Lock()
+	c.ticking = false
+	if !c.closed && c.hasKeepAliveLocked() {
+		c.restartTimerLocked()
+	}
+	c.mu.Unlock()
 }
 
 // New is the canonical domain constructor.

@@ -1,55 +1,63 @@
-# inkgo — native Go terminal UI (Ink-style)
+# inkgo
 
-A native, dependency-free Go rewrite of the customized Ink TUI supplied on 2026-09-09. It is **not** a Node/React wrapper: no Node, Bun, React, Yoga binding, `bidi-js`, sidecar or runtime vendor tree is required.
+`inkgo` is a native, dependency-free Go TUI engine derived from a customized Ink implementation. It is **not** a Node/React wrapper: there is no Node, Bun, React, Yoga binding, `bidi-js`, sidecar, CGO requirement, or runtime vendor tree.
 
-The port preserves the behavior useful to applications while using Go-native ownership: concrete `*Node` trees, explicit state mutation, flex layout, cell rendering, incremental terminal diffs and an embeddable runtime.
+The library provides concrete `*Node` trees, flex layout, Unicode-aware cell rendering, incremental terminal diffs, keyboard/mouse input, selection/search, scroll containers, terminal lifecycle management, and an embeddable runtime.
 
-## Current functionality
+## Install
+
+Requires **Go 1.23+**.
+
+```bash
+go get github.com/frudas24/inkgo@v0.1.0
+```
+
+The source tree is prepared as the `v0.1.0` release candidate. The Git tag is the authoritative published version; until that tag is published, consumers of a development checkout can use a local `replace` directive or the repository branch they intentionally pin.
+
+**External Go dependencies: zero.** `go list -m all` contains only `github.com/frudas24/inkgo`.
+
+## What it includes
 
 - `Box`, `Text`, `RawANSI`, `Link`, `Button`, `ScrollBox`, `Spacer`, `Newline`, `NoSelect`, `AlternateScreen`, `ErrorOverview`
 - row/column/reverse flex layout, wrap, grow/shrink, percentages, min/max, gaps, margin/padding, borders, absolute positioning and overflow
-- ScrollBox sticky/follow behavior, anchors/clamps, smooth pending-wheel drain, xterm.js adaptive drain and fullscreen hardware scroll
-- Unicode cell measurement, combining marks, wide glyphs, emoji/ZWJ clusters, tab stops and contextual mixed RTL/numeric software bidi fallback
+- 10k-row scroll containers with cached geometry and visible-range painting on stable layouts
+- sticky/follow scrolling, anchors/clamps, smooth wheel drain, xterm.js adaptive policy and fullscreen hardware scroll
+- Unicode cell measurement, combining marks, wide glyphs, emoji/ZWJ clusters, tab stops and mixed RTL/numeric software bidi fallback
 - SGR/16/256/RGB ANSI, OSC-8 hyperlinks and raw styled ANSI
-- cell `Screen`, fuzz-hardened wide-cell atomicity, soft-wrap provenance, damage bounds and incremental patching
-- safe relative updates on the main screen; absolute diff plus `DECSTBM + SU/SD` in alternate screen
+- double-buffered cell `Screen`, fuzz-hardened wide-cell atomicity, soft-wrap provenance, damage bounds and incremental patching
+- relative main-screen updates and `DECSTBM + SU/SD` alternate-screen fast paths
 - focus/tab order, capture+bubble keyboard/focus/paste/resize events and scroll-aware hit testing
-- SGR + X10 mouse, click-on-release, drag suppression, hover, multi-click word/line selection and drag-edge scrolling
+- SGR + X10 mouse, click-on-release, drag suppression, hover and multi-click selection
 - bracketed paste, CSI-u/Kitty keys, xterm `modifyOtherKeys`, legacy navigation/function keys and incomplete-sequence timeouts
-- advanced selection including keyboard extension, soft wraps, no-select regions, scrolled-off row capture and sticky-follow reconciliation
-- visible and positioned search highlighting for virtualized content
-- declared physical cursor for IME/accessibility
-- terminal focus state, suspend/resume, SIGCONT/resize recovery, mode reassertion and extended-key negotiation
-- asynchronous terminal queries with DA1 barrier (`DECRQM`, DA1/DA2, Kitty keyboard, cursor, OSC color, XTVERSION)
+- advanced selection, keyboard extension, no-select regions, scrolled-off row capture and search highlighting
+- terminal focus, suspend/resume, SIGCONT/resize recovery, mode reassertion and extended-key negotiation
+- asynchronous terminal queries (`DECRQM`, DA1/DA2, Kitty keyboard, cursor, OSC color, XTVERSION)
 - OSC52, tmux and native clipboard paths (`pbcopy`, `wl-copy`, `xclip`, `xsel`, `clip.exe`)
-- title, bell, notifications, version-gated progress and tab-status control sequences
-- shared `scheduler.Clock` for synchronized/visibility-aware application animations
+- title, bell, notifications, version-gated progress and tab-status sequences
+- shared animation/interval scheduler
 - raw/VT terminal support for Linux, macOS and Windows
-- serialized terminal writes, renderer double buffering and bounded per-node text/ANSI caches for embedded/high-frequency use
+- serialized runtime output, bounded per-node caches and safe/borrowed renderer ownership modes
 
-**External Go dependencies: zero.**
+## Package layout
 
-## Import styles
-
-Small programs can use the root package directly:
+Small programs can use the root facade:
 
 ```go
-import tui "github.com/frudas24/inkgo"
+import ink "github.com/frudas24/inkgo"
 
-root := tui.Root(
-    tui.Box(tui.Style{FlexDirection: tui.Column},
-        tui.Text("hello from Go", tui.TextStyle{Bold: true}),
+root := ink.Root(
+    ink.Box(ink.Style{FlexDirection: ink.Column},
+        ink.Text("hello from Go", ink.TextStyle{Bold: true}),
     ),
 )
 ```
 
-Larger applications can import by domain:
+Larger programs can import by domain:
 
 ```go
 import (
     layout "github.com/frudas24/inkgo/layout"
     render "github.com/frudas24/inkgo/render"
-    terminal "github.com/frudas24/inkgo/terminal"
     widgets "github.com/frudas24/inkgo/widgets"
 )
 
@@ -60,54 +68,44 @@ root := widgets.Root(
 )
 
 r := render.New(render.RenderOptions{Width: 80, Height: 24})
-_ = r.Render(root)
-_ = terminal.ClearSequence()
+frame := r.Render(root)
+_ = frame.Patch
 ```
 
-All domain `Node` aliases have identical Go type identity, so no adapters are required.
+Domain aliases preserve Go type identity, so nodes/styles do not need adapters or conversion allocations.
 
-## Full runtime
+The physical implementation lives under `internal/engine`; the root package is a generated compatibility facade. Run `go generate ./...` after changing exported engine declarations.
+
+## Embedding
+
+For a caller-owned event loop:
 
 ```go
-term := tui.DefaultTerminal()
-root := tui.Root(tui.AlternateScreen(
-    tui.Box(
-        tui.Style{FlexDirection: tui.Column, Padding: tui.I(1)},
-        tui.Text("hello from Go", tui.TextStyle{Bold: true}),
-    ),
-))
-
-rt := tui.NewRuntime(root, term.In, term.Out, tui.RenderOptions{
+term := ink.DefaultTerminal()
+rt := ink.NewRuntime(root, term.In, term.Out, ink.RenderOptions{
     Fullscreen: true,
-    SynchronizedOutput: tui.SupportsSynchronizedOutput(),
     HideCursor: true,
+    SynchronizedOutput: ink.SupportsSynchronizedOutput(),
 })
 rt.Terminal = &term
-if err := rt.Run(); err != nil {
-    panic(err)
-}
-```
 
-For an existing application event loop, use the explicit lifecycle:
-
-```go
 if err := rt.Start(); err != nil {
     panic(err)
 }
 defer rt.Close()
 
-// inside your own reactor/select loop:
+// In your reactor/select loop:
 rt.HandleInput(chunk)
-// mutate application/node state
+// mutate nodes/application state
 _, err := rt.RenderSettled()
+_ = err
 ```
 
-You do not have to give the library ownership of the process loop.
+`Runtime.Run()` is the convenience blocking loop and uses the same lifecycle.
 
+## Renderer ownership
 
-## Renderer ownership and performance
-
-`Frame.Screen` is stable by default and can safely be retained after the next render. For a hot loop that consumes each frame immediately, `BorrowFrameScreen` avoids that snapshot clone:
+`Frame.Screen` is a stable snapshot by default. Hot loops that consume a frame immediately can opt into renderer-owned storage:
 
 ```go
 r := render.New(render.RenderOptions{
@@ -115,31 +113,54 @@ r := render.New(render.RenderOptions{
     BorrowFrameScreen: true,
 })
 frame := r.Render(root)
-// use frame.Screen now; a later Render may reuse its storage
+// frame.Screen must be consumed before the next Render call.
 ```
 
-Round-4 benchmarks on the validation host measured the borrowed path at about **1.47 ms / 441 KB per frame** versus **1.87 ms / 966 KB** for the stable-snapshot path on the 40-row benchmark tree. Treat those numbers as comparative development measurements, not universal throughput guarantees.
+For a materialized 10,000-row `ScrollBox`, the Round-5 validation host measured the final warm scroll path at about **0.114 ms/frame and 6.7 KB/frame** after the initial layout. The first frame remained about **130 ms** because creating/measuring all 10,000 concrete nodes is intentionally O(n). See the validation report for the exact benchmark command and allocation counts.
 
-## Examples and development
+## Development
+
+```bash
+gofmt -w .
+go generate ./...
+go test ./...
+go vet ./...
+go test -race ./...
+./scripts/check-coverage.sh 74.0 coverage.out
+./scripts/check-no-external-deps.sh
+./scripts/check-version.sh
+```
+
+Fuzz targets:
+
+```bash
+go test ./internal/inputparser -run='^$' -fuzz=FuzzParserNeverPanics -fuzztime=5s
+go test ./internal/engine -run='^$' -fuzz=FuzzScreenWideCellInvariants -fuzztime=5s
+go test ./internal/engine -run='^$' -fuzz=FuzzLayoutAndRenderInvariants -fuzztime=5s
+```
+
+Examples:
 
 ```bash
 go run ./examples/fullscreen
 go run ./examples/embed
-
-gofmt -w .
-go vet ./...
-go test ./...
-go test -race ./...
-go test ./internal/inputparser -run='^$' -fuzz=FuzzParserNeverPanics -fuzztime=3s
-go test . -run='^$' -fuzz=FuzzScreenWideCellInvariants -fuzztime=3s
-go test . -run='^$' -fuzz=FuzzLayoutAndRenderInvariants -fuzztime=3s
+go run ./examples/terminal-smoke
 ```
 
-See `ARCHITECTURE.md` for package boundaries, `MIGRATION.md` for TS/React-to-Go mappings, and `PORT_STATUS.md` for the remaining parity boundary.
+`terminal-smoke` is intentionally interactive and exercises the host console/PTY, including the Windows raw/VT path when run from Windows Terminal or PowerShell.
+
+## Documentation
+
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — ownership and package boundaries
+- [`docs/MIGRATION.md`](docs/MIGRATION.md) — mapping from the TypeScript/React model
+- [`docs/STABILITY.md`](docs/STABILITY.md) — public API/version policy
+- [`docs/RELEASE.md`](docs/RELEASE.md) — `v0.1.0` publication checklist and repository metadata
+- [`docs/PORT_STATUS.md`](docs/PORT_STATUS.md) — remaining parity boundary
+- [`docs/validation/ROUND5.md`](docs/validation/ROUND5.md) — production-hardening evidence
 
 ## License
 
 MIT — see [`LICENSE`](LICENSE). This library is a native Go port of Ink
 (MIT, Vadim Demedes) via a customized Ink fork; see
-[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for the full lineage and
-the outstanding clarification about the fork's undeclared customizations.
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for the lineage and the
+outstanding clarification about the fork's undeclared customizations.
