@@ -79,8 +79,17 @@ func TestFindModuleRootWalksParents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != root {
-		t.Fatalf("root = %q, want %q", got, root)
+	// t.TempDir() may return a non-canonical path (on macOS /var is a symlink
+	// to /private/var) while os.Getwd reports the resolved path.
+	want, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved, err := filepath.EvalSymlinks(got); err == nil {
+		got = resolved
+	}
+	if got != want {
+		t.Fatalf("root = %q, want %q", got, want)
 	}
 }
 
