@@ -2,3 +2,6 @@ coverage.out
 *.prof
 *.test
 .DS_Store
+
+# Local agent-generated workspace state
+/.agent/

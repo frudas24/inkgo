@@ -1,6 +1,6 @@
 # Release checklist
 
-This tree is prepared as the **v0.1.2 release candidate**. Publishing the remote Git tag is a repository action and is intentionally separate from building the source ZIP.
+The current source version is **v0.1.3**. For a new release, update `VERSION`, `version.go`, and the version references below before tagging. Publishing the remote Git tag is a repository action and is intentionally separate from building the source ZIP.
 
 ## Before tagging
 
@@ -14,6 +14,9 @@ go test -race ./...
 ./scripts/check-coverage.sh 74.0 coverage.out
 ./scripts/check-no-external-deps.sh
 ./scripts/check-version.sh
+# Include new source files in the commit; the manifest also lists non-ignored
+# untracked files, so inspect git status before committing the release.
+git status --short
 ./scripts/update-manifest.sh
 ./scripts/check-manifest.sh
 go run ./examples/terminal-smoke
@@ -26,15 +29,15 @@ Run the final interactive smoke on at least one real Windows Terminal/PowerShell
 After the validated tree is committed to `main`:
 
 ```bash
-git tag -a v0.1.2 -m "inkgo v0.1.2"
-git push origin v0.1.2
+git tag -a v0.1.3 -m "inkgo v0.1.3"
+git push origin v0.1.3
 ```
 
 Then verify:
 
 ```bash
-go list -m github.com/frudas24/inkgo@v0.1.2
-go get github.com/frudas24/inkgo@v0.1.2
+go list -m github.com/frudas24/inkgo@v0.1.3
+go get github.com/frudas24/inkgo@v0.1.3
 ```
 
 ## Suggested GitHub metadata
@@ -51,4 +54,4 @@ Stars are a community metric, not a release-readiness requirement.
 
 ## License / provenance
 
-The supplied TypeScript source archive did not contain a license file. Before publishing a public `v0.1.2` tag, verify the licensing/provenance obligations of the upstream/customized Ink source and add the appropriate license/attribution. This source tree intentionally does not invent a license on the author's behalf.
+The supplied TypeScript source archive did not contain a license file. Before publishing a public `v0.1.3` tag, verify the licensing/provenance obligations of the upstream/customized Ink source and add the appropriate license/attribution. This source tree intentionally does not invent a license on the author's behalf.

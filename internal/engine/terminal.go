@@ -271,7 +271,11 @@ func (rt *Runtime) Render() (Frame, error) {
 	if frame.Patch == "" {
 		return frame, nil
 	}
-	return frame, rt.WriteRaw(frame.Patch)
+	err := rt.WriteRaw(frame.Patch)
+	if err != nil {
+		rt.Renderer.Invalidate()
+	}
+	return frame, err
 }
 
 func (rt *Runtime) configureScrollPolicy() {
@@ -937,8 +941,8 @@ func (rt *Runtime) SuspendTerminal() {
 // ResumeTerminal re-enters raw/VT modes and forces a clean redraw.
 func (rt *Runtime) ResumeTerminal() {
 	rt.lifecycleMu.Lock()
-	defer rt.lifecycleMu.Unlock()
 	if rt.entered {
+		rt.lifecycleMu.Unlock()
 		return
 	}
 	if rt.Terminal != nil && rt.Terminal.In != nil {
@@ -952,7 +956,8 @@ func (rt *Runtime) ResumeTerminal() {
 	rt.Renderer.Invalidate()
 	_ = rt.WriteRaw(rt.Renderer.EnterSequence(rt.Root))
 	rt.entered = true
-	rt.RefreshSize()
+	rt.lifecycleMu.Unlock()
+	// Rendering may invoke application callbacks, including lifecycle queries.
 	_, _ = rt.Render()
 }
 
@@ -970,12 +975,13 @@ func (rt *Runtime) enterTerminal() error {
 			rt.outputRestore = restore
 		}
 	}
+	// Re-entry clears the physical screen, so old frame history is obsolete.
+	rt.Renderer.Invalidate()
 	// Even a partial entry write must be paired with an exit attempt.
 	rt.entered = true
 	if err := rt.WriteRaw(rt.Renderer.EnterSequence(rt.Root)); err != nil {
 		return err
 	}
-	rt.entered = true
 	return nil
 }
 
@@ -1132,6 +1138,12 @@ func (rt *Runtime) Run() error {
 			}
 			if result.err != nil {
 				if errors.Is(result.err, io.EOF) {
+					// No more bytes can complete an Escape or partial paste.
+					inputs := rt.flushIncompleteInput()
+					if len(inputs) > 0 && !rt.Stopped() && rt.Started() {
+						_, err := rt.RenderSettled()
+						return err
+					}
 					return nil
 				}
 				return result.err

@@ -1,12 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- release lifecycle locks before resume callbacks; repaint after reopening and after failed frame writes;
+- flush pending Escape and partial-paste input on EOF;
+- validate manifest inventory as well as hashes, including new non-ignored files;
+- align release documentation with 0.1.3 and document its embedded-loop API changes.
+
 ## v0.1.3 — runtime event-loop race fix
 
 - signal handlers (SIGWINCH/SIGCONT) and timer callbacks no longer touch the renderer from their own goroutines: runtime work is enqueued and dispatched by the UI owner (`enqueueEvent` / `ProcessEvents`), so `Run` and embedded loops drain it on the calling goroutine;
 - `Stop` is idempotent and event dispatch closes cleanly;
 - link/incomplete-sequence generations invalidate stale timer callbacks;
 - added a regression test that timeout callbacks (escape/paste) run on the UI owner;
-- no API change; zero external modules; CI green on Linux/macOS/Windows.
+- added public `Events()` and `ProcessEvents()` methods; embedded UI loops must service these events for timeout and delayed-link callbacks; zero external modules.
 
 ## v0.1.2 — release hygiene
 
