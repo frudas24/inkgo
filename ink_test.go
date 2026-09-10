@@ -76,8 +76,15 @@ func TestScrollBoxDrainsAndClips(t *testing.T) {
 	}
 	scroll.ScrollBy(2)
 	f = r.Render(root)
-	if scroll.ScrollTop != 2 {
-		t.Fatalf("scrollTop=%d pending=%d", scroll.ScrollTop, scroll.PendingScrollDelta)
+	if scroll.ScrollTop != 1 || scroll.PendingScrollDelta != 1 || !f.ScrollDrainPending {
+		t.Fatalf("first drain scrollTop=%d pending=%d framePending=%v", scroll.ScrollTop, scroll.PendingScrollDelta, f.ScrollDrainPending)
+	}
+	if got := f.Screen.PlainText(); got != "b\nc" {
+		t.Fatalf("first drain = %q", got)
+	}
+	f = r.Render(root)
+	if scroll.ScrollTop != 2 || scroll.PendingScrollDelta != 0 || f.ScrollDrainPending {
+		t.Fatalf("settled scrollTop=%d pending=%d framePending=%v", scroll.ScrollTop, scroll.PendingScrollDelta, f.ScrollDrainPending)
 	}
 	if got := f.Screen.PlainText(); got != "c\nd" {
 		t.Fatalf("scrolled = %q", got)

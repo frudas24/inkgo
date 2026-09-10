@@ -12,6 +12,12 @@ type RenderOptions struct {
 	Fullscreen         bool
 	SynchronizedOutput bool
 	HideCursor         bool
+
+	// Extended-key reporting is auto-detected by default. ForceExtendedKeys
+	// is useful for a known compatible pty; DisableExtendedKeys is useful
+	// when embedding under an unusual terminal multiplexer. Disable wins.
+	ForceExtendedKeys   bool
+	DisableExtendedKeys bool
 }
 
 type Cursor struct {
@@ -25,27 +31,45 @@ type CursorDeclaration struct {
 }
 
 type Frame struct {
-	Screen     *Screen
-	Size       Size
-	Patch      string
-	Damage     Damage
-	Fullscreen bool
-	Cursor     Cursor
+	Screen             *Screen
+	Size               Size
+	Patch              string
+	Damage             Damage
+	Fullscreen         bool
+	Cursor             Cursor
+	SearchMatches      []MatchPosition
+	ScrollDrainPending bool
 }
 
 type Renderer struct {
-	mu         sync.Mutex
-	prev       *Screen
-	options    RenderOptions
-	entered    bool
-	lastRoot   *Node
-	scrollTops map[string]int
-	cursorDecl *CursorDeclaration
-	parked     *Cursor
+	mu              sync.Mutex
+	prev            *Screen
+	options         RenderOptions
+	entered         bool
+	lastRoot        *Node
+	scrollTops      map[string]int
+	cursorDecl      *CursorDeclaration
+	parked          *Cursor
+	selection       *Selection
+	selectionBg     Color
+	searchQuery     string
+	searchCurrent   int
+	searchPositions []MatchPosition
+	searchRowOffset int
 }
 
 func NewRenderer(opts RenderOptions) *Renderer {
 	return &Renderer{options: opts, scrollTops: make(map[string]int)}
+}
+
+// Invalidate discards physical-screen assumptions so the next render is a
+// clean redraw. Use after resize, terminal resume, tmux attach, or wake.
+func (r *Renderer) Invalidate() {
+	r.mu.Lock()
+	r.prev = nil
+	r.parked = nil
+	r.scrollTops = make(map[string]int)
+	r.mu.Unlock()
 }
 
 func (r *Renderer) SetSize(width, height int) {
@@ -54,6 +78,82 @@ func (r *Renderer) SetSize(width, height int) {
 	r.options.Height = height
 	r.mu.Unlock()
 }
+
+// Viewport returns the configured terminal viewport. Zero dimensions mean the
+// renderer will use its normal fallback during rendering.
+func (r *Renderer) Viewport() Size {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return Size{Width: r.options.Width, Height: r.options.Height}
+}
+
+// IsVisible reports whether a laid-out node intersects the live viewport. It
+// accounts for ScrollBox offsets in the same coordinate space used by paint
+// and hit-testing.
+func (r *Renderer) IsVisible(node *Node) bool {
+	if node == nil {
+		return false
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	w, h := r.options.Width, r.options.Height
+	if w <= 0 {
+		w = 80
+	}
+	if h <= 0 {
+		h = 24
+	}
+	clip := Rect{Width: w, Height: h}
+	nr := visualNodeRect(node)
+	for p := node.Parent; p != nil; p = p.Parent {
+		if p.Style.OverflowX == OverflowHidden || p.Style.OverflowX == OverflowScroll ||
+			p.Style.OverflowY == OverflowHidden || p.Style.OverflowY == OverflowScroll ||
+			p.Style.Overflow == OverflowHidden || p.Style.Overflow == OverflowScroll {
+			clip = clip.Intersect(visualContentRect(p))
+		}
+	}
+	visible := nr.Intersect(clip)
+	return visible.Width > 0 && visible.Height > 0
+}
+
+// SetSelection attaches mutable selection state to the renderer. The overlay is
+// applied before damage calculation so selection changes use the same diff path
+// as ordinary content changes.
+func (r *Renderer) SetSelection(selection *Selection) {
+	r.mu.Lock()
+	r.selection = selection
+	r.mu.Unlock()
+}
+
+// SetSelectionBackground configures a solid selection background while
+// preserving each cell's foreground. An unset color falls back to inverse.
+func (r *Renderer) SetSelectionBackground(color Color) {
+	r.mu.Lock()
+	r.selectionBg = color
+	r.mu.Unlock()
+}
+
+// SetSearchHighlight enables case-insensitive scan highlighting for all visible
+// matches. current is optional; use -1 when no scan result should receive the
+// emphasized current-match style.
+func (r *Renderer) SetSearchHighlight(query string, current int) {
+	r.mu.Lock()
+	r.searchQuery = query
+	r.searchCurrent = current
+	r.mu.Unlock()
+}
+
+// SetSearchPositions installs pre-scanned, element-relative matches. These are
+// useful for virtualized lists: positions stay stable while rowOffset changes
+// as the item scrolls. Pass nil to clear.
+func (r *Renderer) SetSearchPositions(positions []MatchPosition, rowOffset, current int) {
+	r.mu.Lock()
+	r.searchPositions = append(r.searchPositions[:0], positions...)
+	r.searchRowOffset = rowOffset
+	r.searchCurrent = current
+	r.mu.Unlock()
+}
+
 func (r *Renderer) Previous() *Screen { r.mu.Lock(); defer r.mu.Unlock(); return r.prev.Clone() }
 
 // DeclareCursor is the Go equivalent of useDeclaredCursor. The declaration
@@ -82,6 +182,7 @@ func (r *Renderer) Render(root *Node) Frame {
 		height = 24
 	}
 	sz := ComputeLayout(root, Size{Width: width, Height: height}, fullscreen)
+	r.reconcileSelectionScroll(root)
 	screenH := sz.Height
 	if fullscreen {
 		screenH = height
@@ -89,6 +190,19 @@ func (r *Renderer) Render(root *Node) Frame {
 	screenH = max(1, screenH)
 	next := NewScreen(width, screenH)
 	paintTree(next, root)
+	ApplySelectionOverlay(next, r.selection, r.selectionBg)
+	var searchMatches []MatchPosition
+	if fullscreen && r.searchQuery != "" {
+		current := r.searchCurrent
+		if len(r.searchPositions) > 0 {
+			// Element-position highlighting owns the current-result emphasis.
+			current = -1
+		}
+		searchMatches = ApplySearchHighlight(next, r.searchQuery, current)
+	}
+	if fullscreen && len(r.searchPositions) > 0 {
+		ApplyPositionedHighlight(next, r.searchPositions, r.searchRowOffset, r.searchCurrent)
+	}
 	cursor := r.resolveDeclaredCursor(next)
 	dmg := ScreenDamage(r.prev, next)
 	preamble := ""
@@ -150,13 +264,76 @@ func (r *Renderer) Render(root *Node) Frame {
 	}
 	r.prev = next.Clone()
 	r.lastRoot = root
-	return Frame{Screen: next, Size: sz, Patch: patch, Damage: dmg, Fullscreen: fullscreen, Cursor: cursor}
+	drainPending := hasPendingScroll(root)
+	return Frame{Screen: next, Size: sz, Patch: patch, Damage: dmg, Fullscreen: fullscreen, Cursor: cursor, SearchMatches: searchMatches, ScrollDrainPending: drainPending}
 }
 
 func RenderToScreen(root *Node, width int) (*Screen, int) {
 	r := NewRenderer(RenderOptions{Width: width, Height: 1})
 	f := r.Render(root)
 	return f.Screen, f.Size.Height
+}
+
+func hasPendingScroll(root *Node) bool {
+	pending := false
+	if root != nil {
+		root.Walk(func(n *Node) bool {
+			if n.PendingScrollDelta != 0 {
+				pending = true
+				return false
+			}
+			return true
+		})
+	}
+	return pending
+}
+
+// reconcileSelectionScroll keeps selection screen coordinates attached to
+// content when a ScrollBox moves. It also captures selected rows from the
+// previous screen before they leave the viewport, matching the fork's
+// drag/keyboard-scroll preservation behavior without coupling Node to Runtime.
+func (r *Renderer) reconcileSelectionScroll(root *Node) {
+	if r.selection == nil || !r.selection.HasSelection() || r.prev == nil || root == nil {
+		return
+	}
+	root.Walk(func(n *Node) bool {
+		if n.Style.OverflowY != OverflowScroll && n.Style.Overflow != OverflowScroll {
+			return true
+		}
+		old, exists := r.scrollTops[n.ID]
+		if !exists || old == n.ScrollTop {
+			return true
+		}
+		delta := n.ScrollTop - old
+		vr := visualContentRect(n)
+		if vr.Height <= 0 {
+			return true
+		}
+		start, end, ok := r.selection.Bounds()
+		if !ok || end.Y < vr.Y || start.Y >= vr.Y+vr.Height {
+			return true
+		}
+		top := max(0, vr.Y)
+		bottom := min(r.prev.Height-1, vr.Y+vr.Height-1)
+		if top > bottom {
+			return true
+		}
+		if delta > 0 {
+			leaving := min(delta, bottom-top+1)
+			r.selection.CaptureScrolledRows(r.prev, top, top+leaving-1, true)
+		} else {
+			leaving := min(-delta, bottom-top+1)
+			r.selection.CaptureScrolledRows(r.prev, bottom-leaving+1, bottom, false)
+		}
+		if r.selection.Dragging {
+			r.selection.ShiftAnchor(-delta, top, bottom)
+		} else if n.StickyScroll {
+			r.selection.ShiftForFollow(-delta, top, bottom)
+		} else {
+			r.selection.Shift(-delta, top, bottom, r.prev.Width)
+		}
+		return true
+	})
 }
 
 func (r *Renderer) captureScrollTops(root *Node) {
@@ -561,6 +738,13 @@ func (r *Renderer) WriteFrame(w io.Writer, root *Node) (Frame, error) {
 	return f, err
 }
 
+func (r *Renderer) extendedKeysEnabled() bool {
+	if r.options.DisableExtendedKeys {
+		return false
+	}
+	return r.options.ForceExtendedKeys || SupportsExtendedKeys()
+}
+
 func (r *Renderer) EnterSequence(root *Node) string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -574,6 +758,10 @@ func (r *Renderer) EnterSequence(root *Node) string {
 		b.WriteString(CursorHome)
 		b.WriteString(EraseScreen)
 	}
+	if r.extendedKeysEnabled() {
+		b.WriteString(EnableKittyKeyboard)
+		b.WriteString(EnableModifyOtherKeys)
+	}
 	b.WriteString(EnableBracketPaste)
 	b.WriteString(EnableFocusEvents)
 	if hasMouseTracking(root) {
@@ -584,6 +772,7 @@ func (r *Renderer) EnterSequence(root *Node) string {
 	}
 	return b.String()
 }
+
 func (r *Renderer) ExitSequence(root *Node) string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -600,11 +789,51 @@ func (r *Renderer) ExitSequence(root *Node) string {
 	}
 	b.WriteString(DisableFocusEvents)
 	b.WriteString(DisableBracketPaste)
+	if r.extendedKeysEnabled() {
+		b.WriteString(DisableModifyOtherKeys)
+		b.WriteString(DisableKittyKeyboard)
+	}
 	if r.options.Fullscreen || hasAlternateScreen(root) {
 		b.WriteString(ExitAltScreen)
 	}
 	return b.String()
 }
+
+// ReassertSequence restores terminal modes after tmux detach/attach, SSH
+// reconnect, SIGCONT, or a long stdin gap. Kitty's protocol is stack-based, so
+// pop-before-push prevents an idle session from accumulating unmatched pushes.
+// includeAltScreen is intentionally opt-in because re-entering mode 1049 clears
+// the fullscreen surface.
+func (r *Renderer) ReassertSequence(root *Node, includeAltScreen bool) string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if !r.entered {
+		return ""
+	}
+	var b strings.Builder
+	if r.extendedKeysEnabled() {
+		b.WriteString(DisableKittyKeyboard)
+		b.WriteString(EnableKittyKeyboard)
+		b.WriteString(EnableModifyOtherKeys)
+	}
+	alt := r.options.Fullscreen || hasAlternateScreen(root)
+	if alt && hasMouseTracking(root) {
+		b.WriteString(EnableMouseTracking)
+	}
+	if includeAltScreen && alt {
+		b.WriteString(EnterAltScreen)
+		b.WriteString(EraseScreen)
+		b.WriteString(CursorHome)
+		if hasMouseTracking(root) {
+			b.WriteString(EnableMouseTracking)
+		}
+		r.prev = nil
+		r.parked = nil
+		r.scrollTops = make(map[string]int)
+	}
+	return b.String()
+}
+
 func hasMouseTracking(root *Node) bool {
 	found := false
 	if root != nil {

@@ -555,6 +555,63 @@ func layoutAbsolute(ctx *layoutCtx, n *Node, parent Rect) {
 	layoutNode(ctx, n, Rect{X: x, Y: y, Width: w, Height: h}, true, true)
 }
 
+func drainScrollDelta(n *Node, pending, viewportHeight int) int {
+	if n == nil || pending == 0 {
+		return 0
+	}
+	sign := 1
+	if pending < 0 {
+		sign = -1
+	}
+	absPending := absInt(pending)
+	capStep := max(1, viewportHeight-1)
+
+	// Explicit fixed step is retained as an embedding escape hatch.
+	if n.ScrollDrainPerFrame > 0 {
+		step := min(absPending, n.ScrollDrainPerFrame, capStep)
+		n.PendingScrollDelta = sign * (absPending - step)
+		return sign * step
+	}
+
+	if n.ScrollAdaptive {
+		// xterm.js: small clicks are instant; larger bursts animate in small
+		// steps, with excess above 30 rows snapped immediately.
+		const instantThreshold = 5
+		const highPending = 12
+		const stepMedium = 2
+		const stepHigh = 3
+		const maxPending = 30
+		applied := 0
+		remaining := absPending
+		if remaining > maxPending {
+			applied += remaining - maxPending
+			remaining = maxPending
+		}
+		step := remaining
+		if remaining > instantThreshold && remaining < highPending {
+			step = stepMedium
+		} else if remaining >= highPending {
+			step = stepHigh
+		}
+		applied += step
+		rem := remaining - step
+		if applied > capStep {
+			excess := applied - capStep
+			n.PendingScrollDelta = sign * (rem + excess)
+			return sign * capStep
+		}
+		n.PendingScrollDelta = sign * rem
+		return sign * applied
+	}
+
+	// Native terminals: proportional drain catches up quickly while ensuring
+	// each step is smaller than the viewport so DECSTBM + SU/SD remains valid.
+	step := max(4, (absPending*3)>>2)
+	step = min(absPending, step, capStep)
+	n.PendingScrollDelta = sign * (absPending - step)
+	return sign * step
+}
+
 func updateScrollState(n *Node, content Rect) {
 	if n.Style.OverflowY != OverflowScroll && n.Style.Overflow != OverflowScroll {
 		return
@@ -582,20 +639,10 @@ func updateScrollState(n *Node, content Rect) {
 		n.ScrollTop = maxScroll
 	}
 	if n.PendingScrollDelta != 0 {
-		step := n.PendingScrollDelta
-		cap := n.ScrollDrainPerFrame
-		if cap <= 0 {
-			cap = 12
-		}
-		if step > cap {
-			step = cap
-		}
-		if step < -cap {
-			step = -cap
-		}
+		step := drainScrollDelta(n, n.PendingScrollDelta, content.Height)
 		n.ScrollTop += step
-		n.PendingScrollDelta -= step
 	}
+
 	if n.ScrollClampMin != nil && n.ScrollTop < *n.ScrollClampMin {
 		n.ScrollTop = *n.ScrollClampMin
 	}

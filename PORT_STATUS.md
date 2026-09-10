@@ -1,4 +1,4 @@
-# Port status and parity boundary
+# Port status and parity boundary — round 2
 
 ## Source audited
 
@@ -6,32 +6,43 @@ Input archive SHA-256:
 
 `d88df225488bc110916d0b3bfbc21950d0748406bafa4e9fed5559501e68e8fc`
 
-The supplied `ink/` tree contains **102 TS/TSX files / 20,011 lines**. It is a customized Ink fork, not stock Ink: alternate-screen rendering, scroll virtualization, selection, mouse/hit testing, search overlays, terminal response parsing, ANSI internals, screen diffing and several performance paths are local behavior.
+The supplied `ink/` tree contains about 20k TypeScript/TSX lines and is a customized Ink fork: alternate-screen rendering, scroll virtualization, selection, mouse/hit testing, search overlays, terminal response parsing, ANSI internals, screen diffing and performance/lifecycle work are local behavior.
 
-The archive references a few files outside the supplied `ink/` directory, most importantly `src/native-ts/yoga-layout/index.js`. Debug/log/bootstrap imports are not needed by the Go runtime.
+## Functional parity estimate
 
-## Ported behavior
+Round 1 was conservatively assessed at about 90% behavioral parity. After the second campaign, the practical parity estimate is **about 97%** for the functionality exposed to a Go TUI consumer.
 
-The Go tree ports the exposed TUI semantics rather than React internals. React Fiber and Yoga object wrappers are intentionally replaced by Go-native tree/layout ownership. Screen rendering, input, focus, scroll, selection, terminal modes and ANSI are all native Go.
+This is a behavioral estimate, not a claim of byte-for-byte implementation identity. React Fiber, JS object caches and Yoga wrappers are intentionally not part of the target architecture.
 
-Validation at handoff:
+Round 2 closes the largest previously known gaps:
 
-- `gofmt`: clean
-- `go vet ./...`: clean
-- `go test ./...`: **10/10 tests pass**
-- `go test -race ./...`: pass
-- cross-compilation test binary: Linux amd64, Windows amd64, macOS amd64: pass
+- click fires on release only and is suppressed after drag;
+- double-click word and triple-click line selection;
+- keyboard selection extension, scroll debt/capture and sticky-follow reconciliation;
+- SGR + X10 mouse and richer terminal response parsing;
+- search integration for visible and virtualized/positioned results;
+- fragment timeouts for ESC and bracketed paste;
+- asynchronous terminal query manager with DA1 sentinel barrier;
+- terminal focus state and long-gap mode recovery;
+- suspend/SIGCONT/resize/alternate-screen reassert lifecycle;
+- Kitty/modifyOtherKeys negotiation with balanced pop-before-push reassert;
+- smooth wheel draining that continues until settled, including xterm.js policy;
+- native/tmux/OSC52 clipboard paths;
+- Linux/macOS/Windows raw terminal paths;
+- terminal raw writer, clear/redraw API and tree replacement for embedding;
+- shared animation clock equivalent to the fork's consolidated clock;
+- domain-oriented public import surfaces.
 
-## Deliberately not claimed as byte-for-byte parity
+## Remaining ~3% boundary
 
-1. **Yoga edge-case rounding.** The exposed style surface is implemented in the self-contained Go flex engine and the common behavior is covered, but the missing native-TS Yoga implementation prevents a truthful claim that every obscure Yoga rounding/cache case is identical. If exact fixture parity becomes necessary, the only vendor slice I need is `src/native-ts/yoga-layout/` (and its direct local dependencies), not the whole `node_modules` tree.
+1. **Exact Yoga edge behavior.** Common flex behavior and the style surface are implemented, but obscure upstream Yoga rounding/cache/min-content edge cases are not promised byte-for-byte because the archive omitted its native Yoga implementation. No vendor is required for normal use.
 
-2. **Full Unicode Bidirectional Algorithm.** The Go port includes a software RTL fallback that preserves grapheme clusters and reorders contiguous RTL runs on Windows/Windows Terminal/xterm.js. The TS fork delegates complex embedding-level resolution to `bidi-js`, whose source was not in the archive. Nested mixed-direction embeddings are therefore a known precision boundary. A vendor copy of `bidi-js` or permission to take a Go Unicode-bidi dependency would close it.
+2. **Full Unicode Bidirectional Algorithm.** The Go software bidi path handles practical RTL/mixed terminal text while preserving grapheme clusters, but it is not a complete nested UAX #9 embedding/isolate implementation equivalent to `bidi-js` for every pathological string.
 
-3. **Terminal capability probing.** Environment-based capability detection and terminal-response parsing are present. The fork's asynchronous startup query manager/XTVERSION cache is not reproduced as a background subsystem; applications can consume `Runtime.OnResponse` and choose policy explicitly.
+3. **Terminal-emulator micro-quirks.** The important xterm.js/tmux/Windows/Kitty paths are represented. There can still be emulator-specific protocol quirks in rare legacy terminals that only real integration fixtures will expose.
 
-4. **Native clipboard helpers.** OSC52/tmux passthrough encoding is present. The TS-specific `pbcopy` / `tmux load-buffer -w` subprocess policy is not baked into the library; Go callers can own that OS policy.
+4. **Error source excerpts.** `ErrorOverview` is functional in Go and renders wrapped error chains. Standard Go `error` values do not universally contain JS-style file/line stack metadata, so the port does not fake source-code excerpts.
 
-5. **Optimization implementation details.** The behaviorally important screen damage diff and fullscreen hardware-scroll path are ported. The exact JS node-cache/blit-cache heuristics are not copied line-for-line; Go rebuilds the next cell buffer and diffs it. This keeps semantics simple and deterministic while still avoiding unchanged terminal writes.
+5. **Internal optimization identity.** The Go renderer has damage diffing and the fullscreen hardware-scroll optimization. It does not copy every JS node-cache/blit-cache heuristic because those are implementation details, not externally observable contracts.
 
-Those are explicit boundaries, not hidden TODOs. The port is usable without a vendor bundle today.
+The project remains **stdlib-only**. The preferred policy is to add no vendor unless a real integration fixture demonstrates a behavior that cannot reasonably be implemented natively.

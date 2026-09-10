@@ -59,6 +59,21 @@ func WrapForMultiplexer(seq string) string {
 func ClipboardOSC52(text string) string {
 	return WrapForMultiplexer(OSC(52, "c", base64.StdEncoding.EncodeToString([]byte(text))))
 }
+
+// GetClearTerminalSequence clears the visible screen and, on modern
+// terminals, scrollback as well. Legacy Windows console uses HVP home.
+func GetClearTerminalSequence() string {
+	if runtime.GOOS == "windows" {
+		modern := os.Getenv("WT_SESSION") != "" ||
+			(os.Getenv("TERM_PROGRAM") == "vscode" && os.Getenv("TERM_PROGRAM_VERSION") != "") ||
+			os.Getenv("TERM_PROGRAM") == "mintty" || os.Getenv("MSYSTEM") != ""
+		if !modern {
+			return EraseScreen + CSI(0, "f")
+		}
+	}
+	return EraseScreen + EraseScrollback + CursorHome
+}
+
 func TerminalTitle(title string) string { return OSC(0, StripANSI(title)) }
 func Bell() string                      { return BEL }
 func NotifyITerm2(message, title string) string {
@@ -71,7 +86,9 @@ func NotifyGhostty(message, title string) string {
 	return WrapForMultiplexer(OSC(777, "notify", title, message))
 }
 func NotifyKitty(message, title string, id int) string {
-	return WrapForMultiplexer(OSC(99, fmt.Sprintf("i=%d:d=0:p=title", id), title)) + WrapForMultiplexer(OSC(99, fmt.Sprintf("i=%d:p=body", id), message))
+	return WrapForMultiplexer(OSC(99, fmt.Sprintf("i=%d:d=0:p=title", id), title)) +
+		WrapForMultiplexer(OSC(99, fmt.Sprintf("i=%d:p=body", id), message)) +
+		WrapForMultiplexer(OSC(99, fmt.Sprintf("i=%d:d=1:a=focus", id), ""))
 }
 
 type ProgressState string

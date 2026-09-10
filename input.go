@@ -4,6 +4,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"unicode/utf8"
 )
 
@@ -33,27 +34,54 @@ type ParsedMouse struct {
 type TerminalResponse struct {
 	Type   string
 	Params []int
-	Value  string
+	Value  string // compatibility alias for Data/Name
+
+	Mode, Status int
+	Flags        int
+	Row, Col     int
+	Code         int
+	Data, Name   string
 }
 
 type InputParser struct {
+	mu      sync.Mutex
 	buffer  string
 	inPaste bool
 	paste   strings.Builder
 }
 
-func NewInputParser() *InputParser    { return &InputParser{} }
-func (p *InputParser) Buffer() string { return p.buffer }
+func NewInputParser() *InputParser { return &InputParser{} }
+func (p *InputParser) Buffer() string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.buffer
+}
+func (p *InputParser) InPaste() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.inPaste
+}
+func (p *InputParser) Pending() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.inPaste || p.buffer != ""
+}
 
 var sgrMouseRE = regexp.MustCompile(`^\x1b\[<(\d+);(\d+);(\d+)([Mm])`)
 var csiURE = regexp.MustCompile(`^\x1b\[(\d+)(?:;(\d+))?u`)
 var modifyOtherRE = regexp.MustCompile(`^\x1b\[27;(\d+);(\d+)~`)
 
 func (p *InputParser) Feed(data []byte) []ParsedInput {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	p.buffer += string(data)
 	return p.consume(false)
 }
-func (p *InputParser) Flush() []ParsedInput { return p.consume(true) }
+func (p *InputParser) Flush() []ParsedInput {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.consume(true)
+}
 
 func (p *InputParser) consume(flush bool) []ParsedInput {
 	var out []ParsedInput
@@ -148,6 +176,15 @@ func nextEscapeSequence(s string) (string, bool) {
 		return "", false
 	}
 	if s[1] == '[' {
+		// Legacy X10 mouse is a fixed six-byte packet: ESC [ M Cb Cx Cy.
+		// The M is the CSI final byte, so generic CSI scanning would otherwise
+		// return only ESC[M and misparse the three coordinate bytes as keys.
+		if strings.HasPrefix(s, "\x1b[M") {
+			if len(s) < 6 {
+				return "", false
+			}
+			return s[:6], true
+		}
 		for i := 2; i < len(s); i++ {
 			b := s[i]
 			if b >= 0x40 && b <= 0x7e {
@@ -311,38 +348,81 @@ func parseKeySequence(s string) Key {
 }
 
 func parseMouse(s string) *ParsedMouse {
-	m := sgrMouseRE.FindStringSubmatch(s)
-	if m == nil {
-		return nil
+	if m := sgrMouseRE.FindStringSubmatch(s); m != nil {
+		btn, _ := strconv.Atoi(m[1])
+		col, _ := strconv.Atoi(m[2])
+		row, _ := strconv.Atoi(m[3])
+		a := "press"
+		if m[4] == "m" {
+			a = "release"
+		}
+		return &ParsedMouse{Button: btn, Action: a, Col: col, Row: row}
 	}
-	btn, _ := strconv.Atoi(m[1])
-	col, _ := strconv.Atoi(m[2])
-	row, _ := strconv.Atoi(m[3])
-	a := "press"
-	if m[4] == "m" {
-		a = "release"
-	}
-	return &ParsedMouse{Button: btn, Action: a, Col: col, Row: row}
-}
-func parseResponse(s string) *TerminalResponse {
-	if strings.HasPrefix(s, "\x1b[?") && strings.HasSuffix(s, "$y") {
-		body := strings.TrimSuffix(strings.TrimPrefix(s, "\x1b[?"), "$y")
-		return &TerminalResponse{Type: "decrpm", Params: parseInts(body)}
-	}
-	if strings.HasPrefix(s, "\x1b[?") && strings.HasSuffix(s, "c") {
-		return &TerminalResponse{Type: "da1", Params: parseInts(strings.TrimSuffix(strings.TrimPrefix(s, "\x1b[?"), "c"))}
-	}
-	if strings.HasPrefix(s, "\x1b[>") && strings.HasSuffix(s, "c") {
-		return &TerminalResponse{Type: "da2", Params: parseInts(strings.TrimSuffix(strings.TrimPrefix(s, "\x1b[>"), "c"))}
-	}
-	if strings.HasPrefix(s, "\x1b]") {
-		return &TerminalResponse{Type: "osc", Value: s}
-	}
-	if strings.HasPrefix(s, "\x1bP>|") {
-		return &TerminalResponse{Type: "xtversion", Value: strings.TrimSuffix(strings.TrimPrefix(s, "\x1bP>|"), ST)}
+	// X10: ESC [ M followed by encoded button/x/y bytes, each biased by 32.
+	if len(s) == 6 && strings.HasPrefix(s, "\x1b[M") {
+		btn := int(s[3]) - 32
+		col := int(s[4]) - 32
+		row := int(s[5]) - 32
+		if btn < 0 || col <= 0 || row <= 0 {
+			return nil
+		}
+		action := "press"
+		if btn&3 == 3 && btn&0x40 == 0 {
+			action = "release"
+		}
+		return &ParsedMouse{Button: btn, Action: action, Col: col, Row: row}
 	}
 	return nil
 }
+
+func parseResponse(s string) *TerminalResponse {
+	if strings.HasPrefix(s, "\x1b[?") && strings.HasSuffix(s, "$y") {
+		body := strings.TrimSuffix(strings.TrimPrefix(s, "\x1b[?"), "$y")
+		parts := parseInts(body)
+		if len(parts) >= 2 {
+			return &TerminalResponse{Type: "decrpm", Params: parts, Mode: parts[0], Status: parts[1]}
+		}
+	}
+	if strings.HasPrefix(s, "\x1b[?") && strings.HasSuffix(s, "c") {
+		params := parseInts(strings.TrimSuffix(strings.TrimPrefix(s, "\x1b[?"), "c"))
+		return &TerminalResponse{Type: "da1", Params: params}
+	}
+	if strings.HasPrefix(s, "\x1b[>") && strings.HasSuffix(s, "c") {
+		params := parseInts(strings.TrimSuffix(strings.TrimPrefix(s, "\x1b[>"), "c"))
+		return &TerminalResponse{Type: "da2", Params: params}
+	}
+	if strings.HasPrefix(s, "\x1b[?") && strings.HasSuffix(s, "u") {
+		body := strings.TrimSuffix(strings.TrimPrefix(s, "\x1b[?"), "u")
+		if n, err := strconv.Atoi(body); err == nil {
+			return &TerminalResponse{Type: "kittyKeyboard", Flags: n, Params: []int{n}}
+		}
+	}
+	if strings.HasPrefix(s, "\x1b[?") && strings.HasSuffix(s, "R") {
+		body := strings.TrimSuffix(strings.TrimPrefix(s, "\x1b[?"), "R")
+		parts := parseInts(body)
+		if len(parts) >= 2 {
+			return &TerminalResponse{Type: "cursorPosition", Row: parts[0], Col: parts[1], Params: parts}
+		}
+	}
+	if strings.HasPrefix(s, "\x1b]") {
+		body := strings.TrimPrefix(s, "\x1b]")
+		body = strings.TrimSuffix(body, ST)
+		body = strings.TrimSuffix(body, "\x07")
+		if semi := strings.IndexByte(body, ';'); semi > 0 {
+			if code, err := strconv.Atoi(body[:semi]); err == nil {
+				data := body[semi+1:]
+				return &TerminalResponse{Type: "osc", Code: code, Data: data, Value: data, Params: []int{code}}
+			}
+		}
+	}
+	if strings.HasPrefix(s, "\x1bP>|") {
+		name := strings.TrimSuffix(strings.TrimPrefix(s, "\x1bP>|"), ST)
+		name = strings.TrimSuffix(name, "\x07")
+		return &TerminalResponse{Type: "xtversion", Name: name, Data: name, Value: name}
+	}
+	return nil
+}
+
 func parseInts(s string) []int {
 	if s == "" {
 		return nil

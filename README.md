@@ -1,64 +1,104 @@
-# reopencode TUI / Ink — native Go port
+# reopencode TUI — native Go port
 
-This tree is a **native Go rewrite** of the customized `ink/` source supplied on 2026-09-09. It is not a Node wrapper and does not require React, Bun, Yoga bindings, `bidi-js`, Chalk, or any other runtime dependency.
+A native, dependency-free Go rewrite of the customized Ink TUI supplied on 2026-09-09. It is **not** a Node/React wrapper: no Node, Bun, React, Yoga binding, `bidi-js`, sidecar or runtime vendor tree is required.
 
-The design keeps the behavior that matters to reopencode while using Go-native ownership: a concrete `*Node` tree replaces React Fiber, direct mutation + dirty propagation replaces reconciliation, and `Renderer` owns layout/screen diff state.
+The port preserves the behavior useful to reopencode while using Go-native ownership: concrete `*Node` trees, explicit state mutation, flex layout, cell rendering, incremental terminal diffs and an embeddable runtime.
 
-## What is implemented
+## Current functionality
 
-- `Box`, `Text`, `RawANSI`, `Link`, `Button`, `ScrollBox`, `Spacer`, `Newline`, `NoSelect`, `AlternateScreen`
-- row/column/reverse flex layout, wrapping, grow/shrink, percentages, min/max, gaps, margins/padding, absolute/relative positioning, borders and overflow
-- ScrollBox inner-content semantics (`flexGrow:1`, `flexShrink:0`), sticky scroll, anchor, clamps and per-frame pending-wheel drain
-- Unicode cell measurement, wide characters, combining marks, emoji/ZWJ clusters, 8-column terminal tab stops
-- ANSI SGR parser, 16/256/RGB colors, OSC-8 hyperlinks and styled raw ANSI
-- screen buffer, wide-cell spacer handling, damage bounds, incremental patches
-- safe **relative** main-screen updates (does not address the shell viewport absolutely)
-- alternate-screen absolute diff plus full-width `DECSTBM + SU/SD` hardware scrolling
-- focus/tab order, capture+bubble keyboard/focus handlers, hit testing through nested scroll viewports
-- SGR mouse, bracketed paste, CSI-u/Kitty keys, xterm `modifyOtherKeys`, legacy function/navigation keys, terminal responses
-- fullscreen selection, `noSelect` / `from-left-edge`, soft-wrap-aware copy, search scanning/highlight
-- Button state render callback (`focused`, `hovered`, `active`) and 100 ms active state expiry
-- declared native cursor for IME/accessibility
-- terminal capability helpers, OSC52 clipboard sequence, title/progress/notification/tab-status helpers
-- Linux raw TTY support and Windows Console raw/VT input + VT output setup
+- `Box`, `Text`, `RawANSI`, `Link`, `Button`, `ScrollBox`, `Spacer`, `Newline`, `NoSelect`, `AlternateScreen`, `ErrorOverview`
+- row/column/reverse flex layout, wrap, grow/shrink, percentages, min/max, gaps, margin/padding, borders, absolute positioning and overflow
+- ScrollBox sticky/follow behavior, anchors/clamps, smooth pending-wheel drain, xterm.js adaptive drain and fullscreen hardware scroll
+- Unicode cell measurement, combining marks, wide glyphs, emoji/ZWJ clusters, tab stops and software bidi fallback
+- SGR/16/256/RGB ANSI, OSC-8 hyperlinks and raw styled ANSI
+- cell `Screen`, wide-cell spacer correctness, damage bounds and incremental patching
+- safe relative updates on the main screen; absolute diff plus `DECSTBM + SU/SD` in alternate screen
+- focus/tab order, capture+bubble keyboard/focus/paste/resize events and scroll-aware hit testing
+- SGR + X10 mouse, click-on-release, drag suppression, hover, multi-click word/line selection and drag-edge scrolling
+- bracketed paste, CSI-u/Kitty keys, xterm `modifyOtherKeys`, legacy navigation/function keys and incomplete-sequence timeouts
+- advanced selection including keyboard extension, soft wraps, no-select regions, scrolled-off row capture and sticky-follow reconciliation
+- visible and positioned search highlighting for virtualized content
+- declared physical cursor for IME/accessibility
+- terminal focus state, suspend/resume, SIGCONT/resize recovery, mode reassertion and extended-key negotiation
+- asynchronous terminal queries with DA1 barrier (`DECRQM`, DA1/DA2, Kitty keyboard, cursor, OSC color, XTVERSION)
+- OSC52, tmux and native clipboard paths (`pbcopy`, `wl-copy`, `xclip`, `xsel`, `clip.exe`)
+- title, bell, notifications, progress and tab-status control sequences
+- shared `scheduler.Clock` for synchronized/visibility-aware application animations
+- raw/VT terminal support for Linux, macOS and Windows
 
-There are **no external Go dependencies**.
+**External Go dependencies: zero.**
 
-## Quick start
+## Import styles
+
+Small programs can use the root package directly:
 
 ```go
-term := inkgo.DefaultTerminal()
-root := inkgo.Root(
-    inkgo.AlternateScreen(
-        inkgo.Box(
-            inkgo.Style{FlexDirection: inkgo.Column, Padding: inkgo.I(1)},
-            inkgo.Text("hello from Go", inkgo.TextStyle{Bold: true}),
-        ),
+import tui "github.com/frudas24/inkgo"
+
+root := tui.Root(
+    tui.Box(tui.Style{FlexDirection: tui.Column},
+        tui.Text("hello from Go", tui.TextStyle{Bold: true}),
+    ),
+)
+```
+
+Larger applications can import by domain:
+
+```go
+import (
+    layout "github.com/frudas24/inkgo/layout"
+    render "github.com/frudas24/inkgo/render"
+    terminal "github.com/frudas24/inkgo/terminal"
+    widgets "github.com/frudas24/inkgo/widgets"
+)
+
+root := widgets.Root(
+    widgets.Box(layout.Style{Width: layout.Percent(100)},
+        widgets.Text("hello"),
     ),
 )
 
-rt := inkgo.NewRuntime(root, term.In, term.Out, inkgo.RenderOptions{
+r := render.New(render.RenderOptions{Width: 80, Height: 24})
+_ = r.Render(root)
+_ = terminal.ClearSequence()
+```
+
+All domain `Node` aliases have identical Go type identity, so no adapters are required.
+
+## Full runtime
+
+```go
+term := tui.DefaultTerminal()
+root := tui.Root(tui.AlternateScreen(
+    tui.Box(
+        tui.Style{FlexDirection: tui.Column, Padding: tui.I(1)},
+        tui.Text("hello from Go", tui.TextStyle{Bold: true}),
+    ),
+))
+
+rt := tui.NewRuntime(root, term.In, term.Out, tui.RenderOptions{
     Fullscreen: true,
-    SynchronizedOutput: inkgo.SupportsSynchronizedOutput(),
+    SynchronizedOutput: tui.SupportsSynchronizedOutput(),
     HideCursor: true,
 })
 rt.Terminal = &term
-err := rt.Run()
+if err := rt.Run(); err != nil {
+    panic(err)
+}
 ```
 
-Run the included interactive example:
+For an existing application event loop, use `HandleInput` plus `Render` or `RenderSettled`; you do not have to give the library ownership of the process loop.
+
+## Examples and development
 
 ```bash
 go run ./examples/fullscreen
-```
+go run ./examples/embed
 
-## Development
-
-```bash
 gofmt -w .
 go vet ./...
 go test ./...
 go test -race ./...
 ```
 
-`MIGRATION.md` maps the TS/React API to Go. `PORT_STATUS.md` documents the exact parity boundary instead of pretending every implementation detail is identical.
+See `ARCHITECTURE.md` for package boundaries, `MIGRATION.md` for TS/React-to-Go mappings, and `PORT_STATUS.md` for the remaining parity boundary.

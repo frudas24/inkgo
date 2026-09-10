@@ -32,6 +32,9 @@ type EventHandlers struct {
 	OnBlurCapture    func(*FocusEvent)
 	OnKeyDown        func(*KeyboardEvent)
 	OnKeyDownCapture func(*KeyboardEvent)
+	OnPaste          func(*PasteEvent)
+	OnPasteCapture   func(*PasteEvent)
+	OnResize         func(*ResizeEvent)
 	OnMouseEnter     func()
 	OnMouseLeave     func()
 }
@@ -68,7 +71,10 @@ type Node struct {
 	ScrollClampMax       *int
 	StickyScroll         bool
 	ScrollAnchor         *ScrollAnchor
-	ScrollDrainPerFrame  int
+	// ScrollDrainPerFrame > 0 forces a fixed drain step. Zero uses the
+	// terminal-aware proportional/adaptive policy.
+	ScrollDrainPerFrame int
+	ScrollAdaptive      bool
 
 	ButtonState  ButtonState
 	OnAction     func()
@@ -93,12 +99,11 @@ func nextNodeID() string {
 func newNode(kind NodeKind, style Style) *Node {
 	style.defaults()
 	return &Node{
-		ID:                  nextNodeID(),
-		Kind:                kind,
-		Style:               style,
-		TabIndex:            -2,
-		dirty:               true,
-		ScrollDrainPerFrame: 12,
+		ID:       nextNodeID(),
+		Kind:     kind,
+		Style:    style,
+		TabIndex: -2,
+		dirty:    true,
 	}
 }
 

@@ -82,58 +82,30 @@ func ApplySearchHighlight(screen *Screen, query string, current int) []MatchPosi
 	return matches
 }
 
-type Selection struct{ Anchor, Focus Point }
-
-func (s Selection) normalized() (Point, Point) {
-	a, b := s.Anchor, s.Focus
-	if a.Y > b.Y || (a.Y == b.Y && a.X > b.X) {
-		a, b = b, a
+// ApplyPositionedHighlight paints one current result from a pre-scanned set.
+// Positions are relative to an element; rowOffset maps them to the live screen.
+func ApplyPositionedHighlight(screen *Screen, positions []MatchPosition, rowOffset, current int) bool {
+	if screen == nil || current < 0 || current >= len(positions) {
+		return false
 	}
-	return a, b
-}
-func (s Selection) RectForRow(row, width int) (int, int, bool) {
-	a, b := s.normalized()
-	if row < a.Y || row > b.Y {
-		return 0, 0, false
+	m := positions[current]
+	row := m.Row + rowOffset
+	if row < 0 || row >= screen.Height {
+		return false
 	}
-	start, end := 0, width
-	if row == a.Y {
-		start = a.X
-	}
-	if row == b.Y {
-		end = b.X + 1
-	}
-	return max(0, start), min(width, end), true
-}
-func (s Selection) Text(screen *Screen) string {
-	if screen == nil {
-		return ""
-	}
-	a, b := s.normalized()
-	a.Y = max(0, a.Y)
-	b.Y = min(screen.Height-1, b.Y)
-	var lines []string
-	for y := a.Y; y <= b.Y; y++ {
-		start, end, ok := s.RectForRow(y, screen.Width)
-		if !ok {
+	applied := false
+	for x := m.Col; x < m.Col+m.Len && x < screen.Width; x++ {
+		if x < 0 {
 			continue
 		}
-		var line strings.Builder
-		for x := start; x < end; x++ {
-			c := screen.Cells[screen.index(x, y)]
-			if c.NoSelect || c.Width == CellSpacerTail {
-				continue
-			}
-			line.WriteString(c.Char)
+		c := &screen.Cells[screen.index(x, row)]
+		if c.NoSelect || c.Width == CellSpacerTail || c.Width == CellSpacerHead {
+			continue
 		}
-		v := strings.TrimRight(line.String(), " ")
-		// softWrap is attached to the continuation row, so if this row itself
-		// is a continuation append it to the previous logical line.
-		if y < len(screen.SoftWrap) && screen.SoftWrap[y] && len(lines) > 0 {
-			lines[len(lines)-1] += v
-		} else {
-			lines = append(lines, v)
-		}
+		c.Style.Bold = true
+		c.Style.Underline = true
+		c.Style.Color = ANSIColor(3)
+		applied = true
 	}
-	return strings.Join(lines, "\n")
+	return applied
 }

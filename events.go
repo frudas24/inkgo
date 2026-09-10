@@ -39,8 +39,11 @@ type KeyboardEvent struct {
 
 type ClickEvent struct {
 	Event
-	X, Y   int
-	Button int
+	X, Y        int
+	LocalX      int
+	LocalY      int
+	Button      int
+	CellIsBlank bool
 }
 
 type FocusEvent struct {
@@ -54,10 +57,12 @@ type MouseMoveEvent struct {
 }
 
 type PasteEvent struct {
+	Event
 	Text string
 }
 
 type ResizeEvent struct {
+	Event
 	Columns int
 	Rows    int
 }

@@ -1,36 +1,40 @@
-# Migration map: customized Ink → Go
+# Migration map: customized Ink -> Go
 
-The important architectural change is intentional: **do not port React application code literally**. Keep long-lived `*inkgo.Node` references and mutate them. A mutation marks the path dirty; the next `Render()` calculates layout and emits only terminal damage.
+Do not translate React application code literally. Keep long-lived Go node references and mutate them. The next render recalculates the affected UI and emits terminal damage.
 
 | TypeScript / React | Go |
 |---|---|
-| `<Box ...>` | `inkgo.Box(inkgo.Style{...}, children...)` |
-| `<Text>` | `inkgo.Text(...)` / `inkgo.TextWithWrap(...)` |
-| `<RawAnsi>` / `<Ansi>` | `inkgo.RawANSI(...)` |
-| `<Link url>` | `inkgo.Link(url, child)` |
-| `<Button onAction>` | `inkgo.Button(...)` |
-| Button render prop | `inkgo.ButtonWithState(..., func(ButtonState) []*Node {...})` |
-| `<ScrollBox>` | `inkgo.ScrollBox(style, sticky, children...)` |
-| `<Spacer>` | `inkgo.Spacer()` |
-| `<Newline count>` | `inkgo.Newline(count)` |
-| `<NoSelect>` | `inkgo.NoSelectBox(...)` / `inkgo.NoSelectFromLeft(...)` |
-| `<AlternateScreen>` | `inkgo.AlternateScreen(...)` |
-| React reconciliation | direct `SetText`, `SetStyle`, `SetChildren`, `Append`, `Remove` |
+| `<Box ...>` | `widgets.Box(...)` / `tui.Box(...)` |
+| `<Text>` | `widgets.Text(...)` |
+| `<RawAnsi>` / `<Ansi>` | `widgets.RawANSI(...)` |
+| `<Link url>` | `widgets.Link(...)` |
+| `<Button onAction>` | `widgets.Button(...)` |
+| Button render prop | `ButtonWithState(..., func(ButtonState) []*Node {...})` |
+| `<ScrollBox>` | `widgets.ScrollBox(...)` |
+| `<Spacer>` / `<Newline>` | `widgets.Spacer()` / `widgets.Newline(n)` |
+| `<NoSelect>` | `NoSelectBox(...)` / `NoSelectFromLeft(...)` |
+| `<AlternateScreen>` | `widgets.AlternateScreen(...)` |
+| `<ErrorOverview>` | `widgets.ErrorOverview(err)` |
+| React reconciliation | `SetText`, `SetStyle`, `SetChildren`, `Append`, `Remove` |
+| replace application tree | `Runtime.SetRoot(root)` |
 | `useInput` | `EventHandlers.OnKeyDown` or `Runtime.HandleInput` |
-| focus hooks | `FocusManager` / `Runtime.Focus` |
-| `useSelection` | `Runtime.Selection`, `Selection.Text` |
-| search highlight | `ScanPositions`, `ApplySearchHighlight` |
-| `useDeclaredCursor` | `Renderer.DeclareCursor(node, line, column, active)` |
-| terminal size hook | `Terminal.Size()` / `Runtime.RefreshSize()` |
-| animation/interval hooks | ordinary Go ticker/timer + node mutation + `Runtime.Render()` |
-| terminal title | `TerminalTitle(...)` |
+| focus hooks | `interaction.FocusManager` / `Runtime.Focus` |
+| terminal focus hook | `Runtime.TerminalFocused()` / `TerminalFocusState()` |
+| `useSelection` | `Runtime.Selection`, `Selection.Text`, `CopySelection` |
+| search hook | `SetSearchHighlight`, `SetSearchPositions`, `ClearSearch` |
+| `useDeclaredCursor` | `Renderer.DeclareCursor(...)` |
+| `useTerminalViewport` | `Runtime.Viewport()` / `Runtime.IsVisible(node)` |
+| `ClockProvider` | `scheduler.New(...)` |
+| `useAnimationFrame` | `Clock.Every(interval, true, callback)` + `Runtime.IsVisible` |
+| `useInterval` | `Clock.Every(interval, false, callback)` |
+| terminal raw writer context | `Runtime.WriteRaw(...)` |
+| clear terminal | `Runtime.ClearTerminal()` / `terminal.ClearSequence()` |
+| terminal title | `Runtime.WriteRaw(TerminalTitle(...))` |
 | notifications | `NotifyITerm2`, `NotifyKitty`, `NotifyGhostty`, `Bell` |
 | progress | `ProgressSequence(...)` |
-| clipboard OSC52 | `ClipboardOSC52(...)` |
+| clipboard | `Runtime.CopySelection` / `SetClipboard` |
 
 ## Style conversion
-
-Numeric TS dimensions become `inkgo.Cells(n)`. Percent strings become `inkgo.Percent(n)`:
 
 ```tsx
 <Box width="100%" height={8} paddingX={1} flexDirection="column" />
@@ -39,36 +43,33 @@ Numeric TS dimensions become `inkgo.Cells(n)`. Percent strings become `inkgo.Per
 becomes:
 
 ```go
-inkgo.Box(inkgo.Style{
-    Width:         inkgo.Percent(100),
-    Height:        inkgo.Cells(8),
-    PaddingX:      inkgo.I(1),
-    FlexDirection: inkgo.Column,
+widgets.Box(layout.Style{
+    Width:         layout.Percent(100),
+    Height:        layout.Cells(8),
+    PaddingX:      layout.I(1),
+    FlexDirection: layout.Column,
 })
 ```
 
-Pointers such as `inkgo.I`, `inkgo.F`, and `inkgo.B` exist because the TS API distinguishes “unset” from explicit zero/false.
+Pointer helpers such as `I`, `F`, and `B` preserve the distinction between an unset property and an explicit zero/false value.
 
-## Stateful text
-
-Instead of a React state update:
+## Stateful UI
 
 ```go
-status := inkgo.Text("idle")
-// later
+status := widgets.Text("idle")
+
+// later, on the UI/event goroutine
 status.SetText("working")
-_, err := runtime.Render()
+_, err := rt.Render()
 ```
 
-No component rebuild is required unless your own application wants one.
+No component rebuild is required. If a state change starts a large wheel movement, `RenderSettled()` preserves the fork's multi-frame drain contract.
 
 ## ScrollBox
 
-The outer viewport contains the same non-shrinking column used by the TS component. Existing child refs remain valid.
-
 ```go
-scroll := inkgo.ScrollBox(
-    inkgo.Style{Height: inkgo.Cells(12), Width: inkgo.Percent(100)},
+scroll := widgets.ScrollBox(
+    layout.Style{Height: layout.Cells(12), Width: layout.Percent(100)},
     true,
     rows...,
 )
@@ -78,10 +79,24 @@ scroll.ScrollToBottom()
 scroll.ScrollToElement(row, -2)
 ```
 
-Pending deltas drain across frames (`ScrollDrainPerFrame`, default 12), matching the fork rather than jumping an arbitrarily large wheel delta in one frame.
+The outer viewport owns clipping/scroll state and contains a non-shrinking column, matching the source fork's important layout invariant.
 
 ## Main screen vs alternate screen
 
-`Renderer` uses two different terminal patch strategies. Main-screen patches are relative to the application's block so shell scrollback is safe. Fullscreen patches can use absolute rows and the `DECSTBM + SU/SD` scroll fast path.
+The renderer intentionally uses two output strategies. Main-screen patches are relative to the application's block so shell scrollback remains safe. Fullscreen patches can use absolute rows and `DECSTBM + SU/SD` hardware scrolling. Do not collapse those paths into unconditional absolute cursor addressing.
 
-Do not replace the main-screen path with raw `CSI row;col H` writes.
+## Importing into a large Go program
+
+Use domain packages when they make dependency ownership clearer:
+
+```text
+widgets -> application view construction
+layout  -> application styling/layout config
+input + interaction -> controller/event layer
+selection -> editor/search feature layer
+render  -> renderer tests/custom rendering
+terminal -> executable/PTY integration layer
+scheduler -> animation/timing layer
+```
+
+The domain packages share canonical types, so `*widgets.Node` can be passed directly to `render.Renderer`, `interaction.HitTest` and `terminal.Runtime`.
