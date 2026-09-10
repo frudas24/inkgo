@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.1.3 — runtime event-loop race fix
+
+- signal handlers (SIGWINCH/SIGCONT) and timer callbacks no longer touch the renderer from their own goroutines: runtime work is enqueued and dispatched by the UI owner (`enqueueEvent` / `ProcessEvents`), so `Run` and embedded loops drain it on the calling goroutine;
+- `Stop` is idempotent and event dispatch closes cleanly;
+- link/incomplete-sequence generations invalidate stale timer callbacks;
+- added a regression test that timeout callbacks (escape/paste) run on the UI owner;
+- no API change; zero external modules; CI green on Linux/macOS/Windows.
+
 ## v0.1.2 — release hygiene
 
 - fixed public release documentation that still pointed consumers at `v0.1.0` after `v0.1.1` was published;
