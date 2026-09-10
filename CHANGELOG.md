@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.1.8 — deep-audit hardening: Windows input, ANSI and Unicode
+
 - harden Windows native-console key translation for combined Ctrl/Shift/Alt modifiers and preserve repeat semantics across reconstructed VT/CSI-u input;
 - preserve the magnitude and remainder of Windows mouse-wheel deltas instead of collapsing multi-notch or partial wheel records to a single step;
 - prioritize the native Windows stop event ahead of console readiness so shutdown cannot consume pending input intended for the next shell/application;

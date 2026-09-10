@@ -2,7 +2,7 @@
 
 Date: 2026-09-10
 
-This checkpoint is a hardening pass on top of the public `v0.1.7` baseline. It deliberately keeps `VERSION`/`ink.Version` at `0.1.7`; the changes remain under `Unreleased` until promoted to a new tag.
+This checkpoint is a hardening pass on top of the public `v0.1.7` baseline, released as **v0.1.8** after the failures it fixes were reproduced and cleared on Linux, macOS and Windows runners.
 
 ## Audit outcome
 
