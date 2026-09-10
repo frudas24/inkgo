@@ -147,17 +147,17 @@ func Graphemes(s string) []Grapheme {
 	riCount := 0
 	lastRegional := false
 	emojiWide := false
-	emojiCandidate := false
 	hasVS16 := false
 	hasVS15 := false
-	keycapBase := false
+	keycapStage := uint8(0) // 1=base, 2=base+VS16, 3=complete
 	keycapComplete := false
 	firstBase := rune(0)
+	prevRune := rune(0)
+	havePrev := false
 	curIsControl := false
-	// Extended_Pictographic base immediately before the pending ZWJ. UAX #29
-	// GB11 joins only \p{Extended_Pictographic} Extend* ZWJ x \p{Extended_
-	// Pictographic}; without this, ASCII digits or '#' joined by a ZWJ fuse
-	// into one cluster wider than the two-cell model can render.
+	// lastPictographic means the current suffix is Extended_Pictographic
+	// followed only by Extend-like runes accepted by this terminal profile.
+	// A following ZWJ consumes that suffix and arms exactly one GB11 join.
 	lastPictographic := false
 	// hasPictographicZWJ records that this cluster contains at least one
 	// successful GB11 join. The screen model can represent a grapheme in at
@@ -174,19 +174,20 @@ func Graphemes(s string) []Grapheme {
 		switch {
 		case keycapComplete:
 			w = 2
+		case hasPictographicZWJ && w > 0:
+			// A successful GB11 chain is one terminal emoji glyph. Selector
+			// details inside the chain must not narrow the whole grapheme.
+			w = 2
 		case hasVS15 && firstBase != 0:
-			// VS15 explicitly requests text presentation. Ignore an otherwise
-			// emoji-default width for the base, but retain East Asian W/F width.
+			// A *valid adjacent* VS15 requests text presentation. Ignore an
+			// otherwise emoji-default width for the base, but retain East Asian
+			// W/F width.
 			w = 1
 			if isWideRune(firstBase) {
 				w = 2
 			}
-		case hasVS16 && emojiCandidate && !keycapBase:
-			w = 2
-		case hasPictographicZWJ && w > 0:
-			// UAX #29 GB11 keeps the chain in one grapheme. Keep that
-			// grapheme representable by the terminal screen's two-cell model,
-			// including text-default pictographs without VS16.
+		case hasVS16 && firstBase != 0 && !isKeycapBase(firstBase):
+			// A bare keycap base + VS16 is still incomplete and stays narrow.
 			w = 2
 		case emojiWide && w > 0:
 			w = 2
@@ -204,12 +205,13 @@ func Graphemes(s string) []Grapheme {
 		riCount = 0
 		lastRegional = false
 		emojiWide = false
-		emojiCandidate = false
 		hasVS16 = false
 		hasVS15 = false
-		keycapBase = false
+		keycapStage = 0
 		keycapComplete = false
 		firstBase = 0
+		prevRune = 0
+		havePrev = false
 		curIsControl = false
 		lastPictographic = false
 		hasPictographicZWJ = false
@@ -226,7 +228,14 @@ func Graphemes(s string) []Grapheme {
 			flush()
 		}
 		regional := r >= 0x1f1e6 && r <= 0x1f1ff
-		zwjJoins := joinNext && lastPictographic && isExtendedPictographic(r)
+		// joinNext means the immediately preceding ZWJ was itself preceded by
+		// Extended_Pictographic Extend*. GB11 permits the join only when the
+		// *next* rune is Extended_Pictographic; even another Extend or ZWJ
+		// after that ZWJ invalidates this opportunity.
+		zwjJoins := joinNext && isExtendedPictographic(r)
+		if joinNext && !zwjJoins {
+			joinNext = false
+		}
 		if zwjJoins {
 			hasPictographicZWJ = true
 		}
@@ -241,45 +250,75 @@ func Graphemes(s string) []Grapheme {
 		if cur.Len() == 0 {
 			curIsControl = control
 		}
+		hadContent := cur.Len() > 0
 		cur.WriteRune(r)
+		if hadContent {
+			switch keycapStage {
+			case 1:
+				switch r {
+				case 0xfe0f:
+					keycapStage = 2
+				case 0x20e3:
+					keycapStage = 3
+					keycapComplete = true
+				default:
+					keycapStage = 0
+				}
+			case 2:
+				if r == 0x20e3 {
+					keycapStage = 3
+					keycapComplete = true
+				} else {
+					keycapStage = 0
+				}
+			}
+		}
 		if regional {
 			riCount++
 			emojiWide = true
 		}
-		if isEmojiCandidateRune(r) {
-			emojiCandidate = true
-		}
 		if isEmojiPresentationRune(r) {
 			emojiWide = true
 		}
-		if r == 0xfe0f {
-			hasVS16 = true
-		}
-		if r == 0xfe0e {
-			hasVS15 = true
-		}
-		if r == 0x20e3 && keycapBase {
-			keycapComplete = true
+		// UTS #51 variation selectors are two-code-point sequences. Do not
+		// let a selector elsewhere in the grapheme retroactively change the
+		// presentation of an earlier emoji base.
+		if (r == 0xfe0f || r == 0xfe0e) && havePrev && isEmojiVariationBase(prevRune) {
+			if r == 0xfe0f {
+				hasVS16 = true
+			} else {
+				hasVS15 = true
+			}
 		}
 		if !isZeroWidth(r) {
 			if firstBase == 0 {
 				firstBase = r
-				keycapBase = isKeycapBase(r)
+				if isKeycapBase(r) {
+					keycapStage = 1
+				}
 			}
 			curWidth += RuneWidth(r)
-			// Emoji modifiers are GB11 "Extend" bytes: they attach to the base
-			// and must not break the pictographic chain before a following ZWJ.
-			if !emojiMod {
-				lastPictographic = isExtendedPictographic(r)
-			}
 		}
-		if r == 0x200d {
-			joinNext = true
-		} else if joinNext && !combining {
-			// Keep the chain alive only if this rune is followed by a ZWJ later;
-			// the next normal rune will flush before being appended.
+
+		// Track the exact GB11 suffix shape needed by the next boundary.
+		// lastPictographic means the current suffix is EP Extend*. A ZWJ
+		// consumes that suffix and arms exactly one possible EP join.
+		switch {
+		case r == 0x200d:
+			joinNext = lastPictographic
+			lastPictographic = false
+		case zwjJoins:
 			joinNext = false
+			lastPictographic = true
+		case combining || emojiMod:
+			// Extend before a ZWJ preserves EP Extend*. Extend after a ZWJ
+			// already cleared joinNext above and cannot re-arm it.
+		default:
+			joinNext = false
+			lastPictographic = isExtendedPictographic(r)
 		}
+		prevRune = r
+		havePrev = true
 		lastRegional = regional
 	}
 	flush()

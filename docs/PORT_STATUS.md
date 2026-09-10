@@ -30,6 +30,8 @@ The project is stdlib-only, CGO-free, importable as `github.com/frudas24/inkgo`,
 
 `v0.1.11` removes the last coarse emoji-property approximations from width/GB11 decisions. `Emoji`, `Emoji_Presentation` and `Extended_Pictographic` now use compact Unicode Emoji 17.0 property ranges, while Regional Indicators remain governed by their separate pairing rule. This closes false GB11 joins for non-pictographic symbols, fixes VS16 width for text-default emoji such as `©`/`®`/`™`, covers the seven Emoji 17 additions and directly asserts table consistency plus the 0..2-cell grapheme contract. Width measurement also regains allocation-free fast paths for ASCII and ordinary non-cluster-sensitive Unicode. Final validation reports 82.1% total statement coverage (92.1% in `internal/textutil`), green race/repetition/fuzz/PTY campaigns and five-target cross-builds. See `validation/POST_V0.1.10_FOLLOWUP.md`.
 
+Current `Unreleased` hardening makes the remaining terminal-facing sequence decisions exact rather than property-based: FE0E/FE0F only affect width when adjacent to one of the 371 Unicode Emoji 17.0 variation bases, keycaps must have the exact `[0-9#*] FE0F? U+20E3` shape, and a GB11 join is cancelled by anything inserted after the ZWJ before the target pictograph. The focused audit raised measured coverage to 82.1% overall and 92.4% in `internal/textutil`, with all five fuzz targets, race/repetition, offline PTY stress, external-consumer smoke and five-target cross-builds green. See `validation/POST_V0.1.11_UNICODE_SEQUENCE_AUDIT.md`.
+
 ## Deliberately remaining parity boundary
 
 The final ~1% is dominated by low-ROI edge identity rather than missing everyday capabilities:

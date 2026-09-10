@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- make emoji presentation selectors sequence-aware instead of treating `Emoji` as a proxy for a registered variation sequence: add the exact Unicode Emoji 17.0 set of 371 variation bases (183 compact ranges), require FE0E/FE0F to be adjacent to such a base, and preserve the base/default width for displaced or unsupported selectors such as `©\u0301\uFE0F`, `⌚\u0301\uFE0E` and `😀\uFE0E`;
+- require keycaps to match the terminal-relevant Unicode shape `[0-9#*] FE0F? U+20E3`; intervening combining marks, VS15 and duplicate VS16 no longer turn a merely keycap-like cluster into a two-cell keycap;
+- tighten GB11 state so the join opportunity created by `Extended_Pictographic Extend* ZWJ` is consumed only by the immediately following `Extended_Pictographic`; an Extend, variation selector, modifier or second ZWJ after the ZWJ cancels that opportunity, while valid families and skin-tone ZWJ sequences remain one two-cell grapheme;
+
 ## v0.1.11 — Unicode 17 emoji properties and width hot paths
 
 - replace the remaining coarse emoji property heuristics with compact Unicode Emoji 17.0 tables for `Emoji`, `Emoji_Presentation` and `Extended_Pictographic`; this fixes VS16 presentation for text-default emoji such as `©`, `®` and `™`, keeps non-Emoji symbols such as `⌘` narrow, separates Regional_Indicator pairing from GB11, and covers all seven Emoji 17 additions while preserving the framebuffer invariant that one grapheme occupies at most two cells;
