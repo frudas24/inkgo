@@ -1,6 +1,6 @@
 //go:build windows
 
-package ink
+package inkgo
 
 import (
 	"os"

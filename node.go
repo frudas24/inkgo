@@ -1,4 +1,4 @@
-package ink
+package inkgo
 
 import (
 	"fmt"

@@ -1,20 +1,20 @@
 # Migration map: customized Ink → Go
 
-The important architectural change is intentional: **do not port React application code literally**. Keep long-lived `*ink.Node` references and mutate them. A mutation marks the path dirty; the next `Render()` calculates layout and emits only terminal damage.
+The important architectural change is intentional: **do not port React application code literally**. Keep long-lived `*inkgo.Node` references and mutate them. A mutation marks the path dirty; the next `Render()` calculates layout and emits only terminal damage.
 
 | TypeScript / React | Go |
 |---|---|
-| `<Box ...>` | `ink.Box(ink.Style{...}, children...)` |
-| `<Text>` | `ink.Text(...)` / `ink.TextWithWrap(...)` |
-| `<RawAnsi>` / `<Ansi>` | `ink.RawANSI(...)` |
-| `<Link url>` | `ink.Link(url, child)` |
-| `<Button onAction>` | `ink.Button(...)` |
-| Button render prop | `ink.ButtonWithState(..., func(ButtonState) []*Node {...})` |
-| `<ScrollBox>` | `ink.ScrollBox(style, sticky, children...)` |
-| `<Spacer>` | `ink.Spacer()` |
-| `<Newline count>` | `ink.Newline(count)` |
-| `<NoSelect>` | `ink.NoSelectBox(...)` / `ink.NoSelectFromLeft(...)` |
-| `<AlternateScreen>` | `ink.AlternateScreen(...)` |
+| `<Box ...>` | `inkgo.Box(inkgo.Style{...}, children...)` |
+| `<Text>` | `inkgo.Text(...)` / `inkgo.TextWithWrap(...)` |
+| `<RawAnsi>` / `<Ansi>` | `inkgo.RawANSI(...)` |
+| `<Link url>` | `inkgo.Link(url, child)` |
+| `<Button onAction>` | `inkgo.Button(...)` |
+| Button render prop | `inkgo.ButtonWithState(..., func(ButtonState) []*Node {...})` |
+| `<ScrollBox>` | `inkgo.ScrollBox(style, sticky, children...)` |
+| `<Spacer>` | `inkgo.Spacer()` |
+| `<Newline count>` | `inkgo.Newline(count)` |
+| `<NoSelect>` | `inkgo.NoSelectBox(...)` / `inkgo.NoSelectFromLeft(...)` |
+| `<AlternateScreen>` | `inkgo.AlternateScreen(...)` |
 | React reconciliation | direct `SetText`, `SetStyle`, `SetChildren`, `Append`, `Remove` |
 | `useInput` | `EventHandlers.OnKeyDown` or `Runtime.HandleInput` |
 | focus hooks | `FocusManager` / `Runtime.Focus` |
@@ -30,7 +30,7 @@ The important architectural change is intentional: **do not port React applicati
 
 ## Style conversion
 
-Numeric TS dimensions become `ink.Cells(n)`. Percent strings become `ink.Percent(n)`:
+Numeric TS dimensions become `inkgo.Cells(n)`. Percent strings become `inkgo.Percent(n)`:
 
 ```tsx
 <Box width="100%" height={8} paddingX={1} flexDirection="column" />
@@ -39,22 +39,22 @@ Numeric TS dimensions become `ink.Cells(n)`. Percent strings become `ink.Percent
 becomes:
 
 ```go
-ink.Box(ink.Style{
-    Width:         ink.Percent(100),
-    Height:        ink.Cells(8),
-    PaddingX:      ink.I(1),
-    FlexDirection: ink.Column,
+inkgo.Box(inkgo.Style{
+    Width:         inkgo.Percent(100),
+    Height:        inkgo.Cells(8),
+    PaddingX:      inkgo.I(1),
+    FlexDirection: inkgo.Column,
 })
 ```
 
-Pointers such as `ink.I`, `ink.F`, and `ink.B` exist because the TS API distinguishes “unset” from explicit zero/false.
+Pointers such as `inkgo.I`, `inkgo.F`, and `inkgo.B` exist because the TS API distinguishes “unset” from explicit zero/false.
 
 ## Stateful text
 
 Instead of a React state update:
 
 ```go
-status := ink.Text("idle")
+status := inkgo.Text("idle")
 // later
 status.SetText("working")
 _, err := runtime.Render()
@@ -67,8 +67,8 @@ No component rebuild is required unless your own application wants one.
 The outer viewport contains the same non-shrinking column used by the TS component. Existing child refs remain valid.
 
 ```go
-scroll := ink.ScrollBox(
-    ink.Style{Height: ink.Cells(12), Width: ink.Percent(100)},
+scroll := inkgo.ScrollBox(
+    inkgo.Style{Height: inkgo.Cells(12), Width: inkgo.Percent(100)},
     true,
     rows...,
 )

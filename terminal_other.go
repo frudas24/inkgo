@@ -1,6 +1,6 @@
 //go:build !linux && !windows
 
-package ink
+package inkgo
 
 import (
 	"errors"

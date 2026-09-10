@@ -1,4 +1,4 @@
-package ink
+package inkgo
 
 // HitTest returns the deepest painted node at a screen coordinate, including
 // clipping and the visual offset introduced by nested ScrollBoxes.

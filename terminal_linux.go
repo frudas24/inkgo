@@ -1,6 +1,6 @@
 //go:build linux
 
-package ink
+package inkgo
 
 import (
 	"os"

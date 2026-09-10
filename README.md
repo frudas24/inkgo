@@ -27,19 +27,19 @@ There are **no external Go dependencies**.
 ## Quick start
 
 ```go
-term := ink.DefaultTerminal()
-root := ink.Root(
-    ink.AlternateScreen(
-        ink.Box(
-            ink.Style{FlexDirection: ink.Column, Padding: ink.I(1)},
-            ink.Text("hello from Go", ink.TextStyle{Bold: true}),
+term := inkgo.DefaultTerminal()
+root := inkgo.Root(
+    inkgo.AlternateScreen(
+        inkgo.Box(
+            inkgo.Style{FlexDirection: inkgo.Column, Padding: inkgo.I(1)},
+            inkgo.Text("hello from Go", inkgo.TextStyle{Bold: true}),
         ),
     ),
 )
 
-rt := ink.NewRuntime(root, term.In, term.Out, ink.RenderOptions{
+rt := inkgo.NewRuntime(root, term.In, term.Out, inkgo.RenderOptions{
     Fullscreen: true,
-    SynchronizedOutput: ink.SupportsSynchronizedOutput(),
+    SynchronizedOutput: inkgo.SupportsSynchronizedOutput(),
     HideCursor: true,
 })
 rt.Terminal = &term

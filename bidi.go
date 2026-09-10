@@ -1,4 +1,4 @@
-package ink
+package inkgo
 
 // HasRTLCharacters is the same fast gate used by the TypeScript fork.
 func HasRTLCharacters(s string) bool {
