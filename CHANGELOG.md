@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- skip runtime keyboard default actions and the global paste callback when a node handler stops the runtime;
+- snapshot child lists before reparenting to avoid skipping nodes when the input aliases another parent's children; reject duplicates and ancestor cycles through the mutation API;
+- keep focus transitions consistent when focus/blur callbacks redirect focus, disable the manager or replace its root; publish button focus state before callbacks and let nested transitions supersede older ones;
+- stop routing keyboard and paste to focused nodes that have been detached or hidden;
+- run expired-button render callbacks before locking renderer history so callbacks can query viewport/visibility or change dimensions without deadlocking;
+- add adversarial tree/focus/renderer regressions and a permanent tree-mutation fuzzer to CI.
+
 - reject a wide-cell write at the right edge before mutating the existing glyph, preventing orphan spacer tails;
 - preserve fitting text (including empty strings, combining marks and ANSI-styled text) when truncating to one column;
 - reject programmatic focus outside the managed tree or under hidden ancestors; autofocus selects the first visible eligible node;

@@ -162,6 +162,7 @@ Fuzz targets:
 go test ./internal/inputparser -run='^$' -fuzz=FuzzParserNeverPanics -fuzztime=5s
 go test ./internal/engine -run='^$' -fuzz=FuzzScreenWideCellInvariants -fuzztime=5s
 go test ./internal/engine -run='^$' -fuzz=FuzzLayoutAndRenderInvariants -fuzztime=5s
+go test ./internal/engine -run='^$' -fuzz=FuzzTreeMutationInvariants -fuzztime=5s
 go test ./internal/textutil -run='^$' -fuzz=FuzzWrapTextInvariants -fuzztime=5s
 go test ./internal/engine -run='^$' -fuzz=FuzzParseANSIInvariants -fuzztime=5s
 ```

@@ -182,9 +182,11 @@ func (r *Renderer) DeclareCursor(node *Node, line, column int, active bool) {
 }
 
 func (r *Renderer) Render(root *Node) Frame {
+	// The UI owner updates the tree. Button render callbacks may query or
+	// resize this renderer, so run them before locking screen history.
+	refreshExpiredButtonStates(root)
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	refreshExpiredButtonStates(root)
 	width := max(0, r.options.Width)
 	height := max(0, r.options.Height)
 	fullscreen := r.options.Fullscreen || hasAlternateScreen(root)

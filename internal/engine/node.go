@@ -306,40 +306,71 @@ func AlternateScreen(children ...*Node) *Node {
 	return n
 }
 
+// acceptsChild prevents cycles through the supported tree mutation methods.
+func (n *Node) acceptsChild(child *Node) bool {
+	if child == nil {
+		return false
+	}
+	for p := n; p != nil; p = p.Parent {
+		if p == child {
+			return false
+		}
+	}
+	return true
+}
+
 func (n *Node) setChildren(children []*Node) {
+	// Snapshot before detaching: children may alias this node or a source parent.
+	next := make([]*Node, 0, len(children))
+	seen := make(map[*Node]struct{}, len(children))
+	for _, child := range children {
+		if !n.acceptsChild(child) {
+			continue
+		}
+		if _, duplicate := seen[child]; duplicate {
+			continue
+		}
+		seen[child] = struct{}{}
+		next = append(next, child)
+	}
 	for _, old := range n.Children {
 		if old != nil && old.Parent == n {
 			old.Parent = nil
 		}
 	}
-	n.Children = n.Children[:0]
-	for _, c := range children {
-		if c == nil {
-			continue
+	n.Children = next
+	for _, child := range next {
+		if child.Parent != nil && child.Parent != n {
+			child.Parent.removeChild(child)
 		}
-		if c.Parent != nil && c.Parent != n {
-			c.Parent.removeChild(c)
-		}
-		c.Parent = n
-		n.Children = append(n.Children, c)
+		child.Parent = n
 	}
 	n.MarkDirty()
 }
 
+// SetChildren replaces the child list, preserving order and ignoring nil,
+// repeated nodes, and entries that would create an ancestor cycle.
 func (n *Node) SetChildren(children ...*Node) { n.setChildren(children) }
 
+// Append adds new children in order. Existing children retain their position;
+// nil, repeated nodes and entries that would create a cycle are ignored.
 func (n *Node) Append(children ...*Node) {
-	for _, c := range children {
-		if c == nil {
+	children = append([]*Node(nil), children...)
+	changed := false
+	for _, child := range children {
+		if !n.acceptsChild(child) || child.Parent == n {
 			continue
 		}
-		if c.Parent != nil && c.Parent != n {
-			c.Parent.removeChild(c)
+		if child.Parent != nil {
+			child.Parent.removeChild(child)
 		}
-		c.Parent = n
-		n.Children = append(n.Children, c)
+		child.Parent = n
+		n.Children = append(n.Children, child)
+		changed = true
 	}
-	n.MarkDirty()
+	if changed {
+		n.MarkDirty()
+	}
 }
 
 func (n *Node) removeChild(child *Node) {

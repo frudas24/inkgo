@@ -3,16 +3,23 @@ package engine
 import "sort"
 
 type FocusManager struct {
-	root    *Node
-	focused *Node
-	enabled bool
+	root     *Node
+	focused  *Node
+	enabled  bool
+	revision uint64
 }
 
 func NewFocusManager(root *Node) *FocusManager {
 	return &FocusManager{root: root, enabled: true}
 }
 
-func (f *FocusManager) SetRoot(root *Node) { f.root = root }
+func (f *FocusManager) SetRoot(root *Node) {
+	f.revision++
+	f.root = root
+	if f.focused != nil && !f.canFocus(f.focused) {
+		f.Blur()
+	}
+}
 
 func (f *FocusManager) Focused() *Node { return f.focused }
 
@@ -23,61 +30,84 @@ func (f *FocusManager) Disable() {
 	f.Blur()
 }
 
-func (f *FocusManager) Focus(node *Node) bool {
-	if !f.enabled || node == nil || node.TabIndex < -1 || node.Style.Display == DisplayNone {
+func (f *FocusManager) canFocus(node *Node) bool {
+	if !f.enabled || node == nil || node.TabIndex < -1 {
 		return false
 	}
-	// Programmatic focus follows the same visibility/tree boundary as Tab.
-	belongs := false
 	for ancestor := node; ancestor != nil; ancestor = ancestor.Parent {
 		if ancestor.Style.Display == DisplayNone {
 			return false
 		}
 		if ancestor == f.root {
-			belongs = true
-			break
+			return true
 		}
 	}
-	if !belongs {
+	return false
+}
+
+func setButtonFocused(node *Node, focused bool) {
+	if node != nil && node.Kind == NodeButton {
+		next := node.ButtonState
+		next.Focused = focused
+		node.setButtonState(next)
+	}
+}
+
+func (f *FocusManager) Focus(node *Node) bool {
+	if !f.canFocus(node) {
 		return false
 	}
 	if f.focused == node {
 		return true
 	}
+	f.revision++
+	revision := f.revision
 	old := f.focused
+	// Publish state before calling application code. A nested focus operation
+	// supersedes this transition and must not be overwritten when it returns.
+	f.focused = nil
 	if old != nil {
-		e := &FocusEvent{Event: Event{Target: old}, RelatedTarget: node}
-		dispatchFocusEvent(old, e, false)
-		if old.Kind == NodeButton {
-			next := old.ButtonState
-			next.Focused = false
-			old.setButtonState(next)
+		setButtonFocused(old, false)
+		if f.revision != revision {
+			return f.focused == node
+		}
+		dispatchFocusEvent(old, &FocusEvent{Event: Event{Target: old}, RelatedTarget: node}, false)
+		if f.revision != revision {
+			return f.focused == node
 		}
 	}
-	f.focused = node
-	e := &FocusEvent{Event: Event{Target: node}, RelatedTarget: old}
-	dispatchFocusEvent(node, e, true)
-	if node.Kind == NodeButton {
-		next := node.ButtonState
-		next.Focused = true
-		node.setButtonState(next)
+	if !f.canFocus(node) {
+		return false
 	}
-	return true
+	f.focused = node
+	setButtonFocused(node, true)
+	if f.revision != revision {
+		return f.focused == node
+	}
+	if !f.canFocus(node) {
+		f.Blur()
+		return false
+	}
+	dispatchFocusEvent(node, &FocusEvent{Event: Event{Target: node}, RelatedTarget: old}, true)
+	if f.revision == revision && !f.canFocus(node) {
+		f.Blur()
+	}
+	return f.focused == node
 }
 
 func (f *FocusManager) Blur() {
-	if f.focused == nil {
-		return
-	}
+	f.revision++
+	revision := f.revision
 	old := f.focused
 	f.focused = nil
-	e := &FocusEvent{Event: Event{Target: old}}
-	dispatchFocusEvent(old, e, false)
-	if old.Kind == NodeButton {
-		next := old.ButtonState
-		next.Focused = false
-		old.setButtonState(next)
+	if old == nil {
+		return
 	}
+	setButtonFocused(old, false)
+	if f.revision != revision {
+		return
+	}
+	dispatchFocusEvent(old, &FocusEvent{Event: Event{Target: old}}, false)
 }
 
 type focusableNode struct {
@@ -131,7 +161,7 @@ func (f *FocusManager) FocusNext() *Node {
 	}
 	next := nodes[(idx+1)%len(nodes)]
 	f.Focus(next)
-	return next
+	return f.Focused()
 }
 
 func (f *FocusManager) FocusPrevious() *Node {
@@ -155,7 +185,7 @@ func (f *FocusManager) FocusPrevious() *Node {
 	}
 	prev := nodes[idx]
 	f.Focus(prev)
-	return prev
+	return f.Focused()
 }
 
 func (f *FocusManager) AutoFocus() *Node {
@@ -176,8 +206,9 @@ func (f *FocusManager) AutoFocus() *Node {
 		}
 		return true
 	})
-	if found != nil && f.Focus(found) {
-		return found
+	if found != nil {
+		f.Focus(found)
+		return f.Focused()
 	}
 	return nil
 }

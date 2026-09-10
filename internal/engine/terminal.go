@@ -533,15 +533,27 @@ func (rt *Runtime) selectionScreen() *Screen {
 	return rt.Renderer.Previous()
 }
 
+// Reconcile focus after application tree mutations before routing input.
+// Blur handlers may intentionally focus a different eligible node.
+func (rt *Runtime) inputTarget() *Node {
+	if focused := rt.Focus.Focused(); focused != nil && !rt.Focus.canFocus(focused) {
+		rt.Focus.Blur()
+	}
+	if focused := rt.Focus.Focused(); rt.Focus.canFocus(focused) {
+		return focused
+	}
+	return rt.Root
+}
+
 func (rt *Runtime) dispatch(in ParsedInput) {
 	switch in.Kind {
 	case InputPaste:
-		target := rt.Focus.Focused()
-		if target == nil {
-			target = rt.Root
+		target := rt.inputTarget()
+		if rt.Stopped() {
+			return
 		}
 		DispatchPaste(target, in.Paste)
-		if rt.OnPaste != nil {
+		if !rt.Stopped() && rt.OnPaste != nil {
 			rt.OnPaste(in.Paste)
 		}
 	case InputResponse:
@@ -789,12 +801,12 @@ func (rt *Runtime) ProbeTerminalIdentity() {
 }
 
 func (rt *Runtime) dispatchKey(key Key) {
-	target := rt.Focus.Focused()
-	if target == nil {
-		target = rt.Root
+	target := rt.inputTarget()
+	if rt.Stopped() {
+		return
 	}
 	e := DispatchKey(target, key)
-	if e != nil && e.DefaultPrevented() {
+	if rt.Stopped() || (e != nil && e.DefaultPrevented()) {
 		return
 	}
 

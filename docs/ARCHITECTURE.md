@@ -72,6 +72,18 @@ This keeps the convenient flat root API without making the root the implementati
 
 A node tree has one logical UI owner. The application should serialize node mutation and callbacks on its event/reactor goroutine. `Node` is intentionally not a concurrent mutable graph.
 
+`SetChildren` and `Append` snapshot incoming child lists before reparenting, so
+passing another node's `Children` slice does not skip elements. They ignore nil,
+duplicate and ancestor-cycle entries; `Append` retains existing children's order.
+Use these methods to maintain parent/child ownership. Direct field edits remain
+the caller's responsibility.
+
+Focus callbacks may redirect focus, blur, disable the manager or change its root.
+The newer transition takes precedence, and focus state is updated before callbacks
+run. Input routing checks whether the focused node is still visible in the current
+tree. Expired-button render callbacks execute before the renderer's history lock,
+so a callback can inspect the viewport or change its size on the same UI goroutine.
+
 The engine separates layout invalidation from paint invalidation. Text-style, selection, hover, and scrolling can repaint without forcing flex geometry to be recomputed. Geometry-affecting changes invalidate layout up the ancestor path.
 
 On a stable large vertical scroll layout, the engine certifies directly ordered/non-overlapping children and binary-searches the visible range. The layout also retains root-local indexes of scroll/button nodes so hot scroll frames do not repeatedly walk thousands of static descendants just to rediscover control nodes. The initial materialized tree remains O(n); subsequent scroll paint scales primarily with the viewport.

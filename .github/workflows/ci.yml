@@ -150,3 +150,4 @@ jobs:
       - run: go test ./internal/engine -run='^$' -fuzz=FuzzLayoutAndRenderInvariants -fuzztime=5s
       - run: go test ./internal/textutil -run='^$' -fuzz=FuzzWrapTextInvariants -fuzztime=5s
       - run: go test ./internal/engine -run='^$' -fuzz=FuzzParseANSIInvariants -fuzztime=5s
+      - run: go test ./internal/engine -run='^$' -fuzz=FuzzTreeMutationInvariants -fuzztime=5s
