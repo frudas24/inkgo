@@ -93,6 +93,32 @@ func isEmojiCandidateRune(r rune) bool {
 		(r >= 0x1f000 && r <= 0x1faff)
 }
 
+// isExtendedPictographic approximates Unicode's Extended_Pictographic property
+// for the terminal-relevant subset, which UAX #29 GB11 needs to decide whether
+// a ZWJ joins the following rune. Keycap bases (ASCII digits, '#' and '*') are
+// deliberately excluded: they are emoji candidates but never head a ZWJ
+// sequence, and treating them as pictographic fuses digit ZWJ runs into a
+// single cluster wider than the two-cell model can render.
+func isExtendedPictographic(r rune) bool {
+	if isEmojiPresentationRune(r) {
+		return true
+	}
+	switch {
+	case r == 0x00a9 || r == 0x00ae || r == 0x2122,
+		r == 0x203c || r == 0x2049,
+		r == 0x2139,
+		r == 0x3030 || r == 0x303d,
+		r == 0x3297 || r == 0x3299,
+		r == 0x21a9 || r == 0x21aa,
+		r >= 0x2194 && r <= 0x2199,
+		r >= 0x2300 && r <= 0x23ff,
+		r >= 0x25a0 && r <= 0x27bf,
+		r >= 0x2900 && r <= 0x2bff:
+		return true
+	}
+	return false
+}
+
 // isEmojiPresentationRune is the compact terminal-relevant subset of Unicode's
 // Emoji_Presentation property. Text-default symbols such as U+26A0 WARNING SIGN
 // intentionally remain narrow unless VS16 requests emoji presentation.
@@ -197,6 +223,11 @@ func Graphemes(s string) []Grapheme {
 	keycapComplete := false
 	firstBase := rune(0)
 	curIsControl := false
+	// Extended_Pictographic base immediately before the pending ZWJ. UAX #29
+	// GB11 joins only \p{Extended_Pictographic} Extend* ZWJ x \p{Extended_
+	// Pictographic}; without this, ASCII digits or '#' joined by a ZWJ fuse
+	// into one cluster wider than the two-cell model can render.
+	lastPictographic := false
 	flush := func() {
 		if cur.Len() == 0 {
 			return
@@ -236,6 +267,7 @@ func Graphemes(s string) []Grapheme {
 		keycapComplete = false
 		firstBase = 0
 		curIsControl = false
+		lastPictographic = false
 	}
 
 	for _, r := range s {
@@ -249,7 +281,8 @@ func Graphemes(s string) []Grapheme {
 			flush()
 		}
 		regional := r >= 0x1f1e6 && r <= 0x1f1ff
-		if cur.Len() > 0 && !combining && !emojiMod && !joinNext {
+		zwjJoins := joinNext && lastPictographic && isExtendedPictographic(r)
+		if cur.Len() > 0 && !combining && !emojiMod && !zwjJoins {
 			if !(regional && riCount == 1) {
 				flush()
 			}
@@ -283,6 +316,11 @@ func Graphemes(s string) []Grapheme {
 				keycapBase = isKeycapBase(r)
 			}
 			curWidth += RuneWidth(r)
+			// Emoji modifiers are GB11 "Extend" bytes: they attach to the base
+			// and must not break the pictographic chain before a following ZWJ.
+			if !emojiMod {
+				lastPictographic = isExtendedPictographic(r)
+			}
 		}
 		if r == 0x200d {
 			joinNext = true

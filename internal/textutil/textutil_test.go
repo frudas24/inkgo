@@ -56,6 +56,43 @@ func TestTabsWrapTruncateAndMeasure(t *testing.T) {
 	}
 }
 
+// ZWJ only joins clusters when UAX #29 GB11 applies, i.e. an
+// Extended_Pictographic base before it. Digits are not pictographic, so a
+// digit ZWJ run must split: fusing it produced a single cluster 3 cells wide,
+// which the two-cell model cannot render and wrapping cannot break.
+func TestZWJJoiningRequiresPictographicBase(t *testing.T) {
+	digits := "0\u200d0\u200d0"
+	gs := Graphemes(digits)
+	if len(gs) != 3 {
+		t.Fatalf("digit ZWJ run graphemes=%d (%v), want 3", len(gs), gs)
+	}
+	for _, g := range gs {
+		if g.Width != 1 {
+			t.Fatalf("digit ZWJ cluster %q width=%d, want 1", g.Text, g.Width)
+		}
+	}
+	if got := StringWidth(digits); got != 3 {
+		t.Fatalf("digit ZWJ run width=%d, want 3", got)
+	}
+	// GB9 keeps the trailing ZWJ with its base, so the two one-cell clusters
+	// "0\u200d" fill the first row exactly.
+	if got := WrapText(digits, 2, core.TextWrapTrim); got != "0\u200d0\u200d\n0" {
+		t.Fatalf("digit ZWJ wrap=%q", got)
+	}
+
+	// Real emoji ZWJ sequences must still collapse to one two-cell cluster.
+	for _, in := range []string{
+		"👨\u200d👩\u200d👧\u200d👦", // family
+		"🧑\u200d💻",               // technologist
+		"👨🏽\u200d👩",              // skin tone between base and ZWJ
+	} {
+		gs := Graphemes(in)
+		if len(gs) != 1 || gs[0].Width != 2 {
+			t.Fatalf("emoji ZWJ %q graphemes=%v, want one 2-cell cluster", in, gs)
+		}
+	}
+}
+
 func TestStripANSIControlFamiliesAndInvalidUTF8(t *testing.T) {
 	in := "a\x1b[31mb\x1b[0m" +
 		"\x1b]8;;https://example.com\x07c\x1b]8;;\x1b\\" +
