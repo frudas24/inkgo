@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.1.13 — tree ownership, reentrant focus and input lifecycle
+
 - skip runtime keyboard default actions and the global paste callback when a node handler stops the runtime;
 - snapshot child lists before reparenting to avoid skipping nodes when the input aliases another parent's children; reject duplicates and ancestor cycles through the mutation API;
 - keep focus transitions consistent when focus/blur callbacks redirect focus, disable the manager or replace its root; publish button focus state before callbacks and let nested transitions supersede older ones;
