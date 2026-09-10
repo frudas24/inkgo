@@ -41,3 +41,20 @@ sessions. Its transitive Go-module dependencies are development/test tooling
 only and are not imported by the published `github.com/frudas24/inkgo` module.
 No `go-pty` or transitive dependency source is vendored into this repository;
 their own upstream license terms apply when the test module is downloaded.
+
+## Unicode data
+
+`internal/textutil/emoji_properties.go` and `emoji_pictographic.go` contain
+compacted property ranges derived from Unicode Emoji 17.0 `emoji-data.txt` for
+`Emoji`, `Emoji_Presentation` and `Extended_Pictographic`. Unicode data files
+are Copyright © 1991-2026 Unicode, Inc. and are made available under the
+Unicode License v3, which permits use, modification and redistribution subject
+to its notice requirements and warranty disclaimer. The authoritative data and
+license are available from:
+
+- https://www.unicode.org/Public/17.0.0/ucd/emoji/emoji-data.txt
+- https://www.unicode.org/license.txt
+
+The property tables are data only; no Unicode library or runtime dependency is
+linked into inkgo.
+

@@ -15,6 +15,8 @@ func FuzzWrapTextInvariants(f *testing.F) {
 		"a\tb",
 		"界界界",
 		"👨‍👩‍👧‍👦 hello",
+		"©️ ®️ ™️ ⌘️",
+		"🛘 🪊 🪎 🫈 🫍 🫪 🫯",
 		"☀\u200d☀\u200d☀",
 		"♥\u200d♥\u200d♥",
 		"🇦\u200d🇧",
@@ -33,9 +35,32 @@ func FuzzWrapTextInvariants(f *testing.F) {
 		if trim {
 			mode = core.TextWrapTrim
 		}
-		for _, g := range Graphemes(StripANSI(input)) {
+		plain := StripANSI(input)
+		graphemes := Graphemes(plain)
+		for _, g := range graphemes {
 			if g.Width < 0 || g.Width > 2 {
 				t.Fatalf("grapheme width outside screen model: input=%q grapheme=%q width=%d", input, g.Text, g.Width)
+			}
+		}
+		if fastWidth, ok := simpleStringWidth(plain); ok {
+			fullWidth := 0
+			for _, g := range graphemes {
+				fullWidth += g.Width
+			}
+			if fastWidth != fullWidth {
+				t.Fatalf("simple width drift: input=%q fast=%d grapheme=%d", input, fastWidth, fullWidth)
+			}
+		}
+		// The ASCII and StripANSI fast paths must agree with the grapheme model
+		// too: measurement and painting read the same text, so a divergence
+		// here desynchronises layout from what the screen actually draws.
+		{
+			graphemeWidth := 0
+			for _, g := range graphemes {
+				graphemeWidth += g.Width
+			}
+			if measured := StringWidth(input); measured != graphemeWidth {
+				t.Fatalf("StringWidth drift: input=%q measured=%d grapheme=%d", input, measured, graphemeWidth)
 			}
 		}
 

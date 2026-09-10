@@ -3,6 +3,7 @@ package textutil
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	core "github.com/frudas24/inkgo/internal/core"
 )
@@ -313,5 +314,124 @@ func TestTerminalControlsDoNotMergeIntoNeighboringGraphemes(t *testing.T) {
 	gs = Graphemes("\r\u0616")
 	if len(gs) != 2 || gs[0].Text != "\r" || gs[1].Text != "\u0616" {
 		t.Fatalf("control/combining graphemes=%#v", gs)
+	}
+}
+
+func TestUnicode17EmojiPropertiesAreExactForTerminalPolicy(t *testing.T) {
+	cases := []struct {
+		name         string
+		r            rune
+		emoji        bool
+		presentation bool
+		pictographic bool
+	}{
+		{"copyright", '©', true, false, true},
+		{"registered", '®', true, false, true},
+		{"trade mark", '™', true, false, true},
+		{"command key", '⌘', false, false, false},
+		{"regional indicator A", '\U0001F1E6', true, true, false},
+		{"landslide E17", '\U0001F6D8', true, true, true},
+		{"trombone E17", '\U0001FA8A', true, true, true},
+		{"treasure chest E17", '\U0001FA8E', true, true, true},
+		{"hairy creature E17", '\U0001FAC8', true, true, true},
+		{"orca E17", '\U0001FACD', true, true, true},
+		{"distorted face E17", '\U0001FAEA', true, true, true},
+		{"fight cloud E17", '\U0001FAEF', true, true, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isEmojiCandidateRune(tc.r); got != tc.emoji {
+				t.Fatalf("Emoji(%U)=%v want %v", tc.r, got, tc.emoji)
+			}
+			if got := isEmojiPresentationRune(tc.r); got != tc.presentation {
+				t.Fatalf("Emoji_Presentation(%U)=%v want %v", tc.r, got, tc.presentation)
+			}
+			if got := isExtendedPictographic(tc.r); got != tc.pictographic {
+				t.Fatalf("Extended_Pictographic(%U)=%v want %v", tc.r, got, tc.pictographic)
+			}
+		})
+	}
+}
+
+func TestEmojiVariationSelectorsUseUnicodeEmojiProperty(t *testing.T) {
+	cases := map[string]int{
+		"©":  1,
+		"©︎": 1,
+		"©️": 2,
+		"®":  1,
+		"®️": 2,
+		"™":  1,
+		"™️": 2,
+		"⌘":  1,
+		"⌘️": 1, // VS16 does not turn a non-Emoji code point into emoji.
+	}
+	for input, want := range cases {
+		if got := StringWidth(input); got != want {
+			t.Errorf("StringWidth(%q)=%d want %d", input, got, want)
+		}
+	}
+}
+
+func TestUnicode17EmojiTableCounts(t *testing.T) {
+	count := func(rs []runeRange) int {
+		n := 0
+		for _, rg := range rs {
+			n += int(rg.hi-rg.lo) + 1
+		}
+		return n
+	}
+	if got := count(emojiRanges[:]); got != 1438 {
+		t.Fatalf("Emoji table has %d code points, want 1438", got)
+	}
+	if got := count(emojiPresentationRanges[:]); got != 1219 {
+		t.Fatalf("Emoji_Presentation table has %d code points, want 1219", got)
+	}
+	if got := count(extendedPictographicRanges[:]); got != 2848 {
+		t.Fatalf("Extended_Pictographic table has %d code points, want 2848", got)
+	}
+}
+
+func TestUnicodeEmojiTablesAreSortedDisjointAndConsistent(t *testing.T) {
+	checkRanges := func(name string, rs []runeRange) {
+		t.Helper()
+		for i, rg := range rs {
+			if rg.lo > rg.hi {
+				t.Fatalf("%s range %d inverted: %U..%U", name, i, rg.lo, rg.hi)
+			}
+			if i > 0 && rs[i-1].hi >= rg.lo {
+				t.Fatalf("%s ranges overlap/out of order: %U..%U then %U..%U", name, rs[i-1].lo, rs[i-1].hi, rg.lo, rg.hi)
+			}
+		}
+	}
+	checkRanges("Emoji", emojiRanges[:])
+	checkRanges("Emoji_Presentation", emojiPresentationRanges[:])
+	checkRanges("Extended_Pictographic", extendedPictographicRanges[:])
+
+	for r := rune(0); r <= utf8.MaxRune; r++ {
+		if isEmojiPresentationRune(r) && !isEmojiCandidateRune(r) {
+			t.Fatalf("Emoji_Presentation must imply Emoji: %U", r)
+		}
+		if w := RuneWidth(r); w < 0 || w > 2 {
+			t.Fatalf("RuneWidth(%U)=%d outside terminal cell model", r, w)
+		}
+	}
+}
+
+func TestStringWidthASCIIHotPathMatchesControlPolicy(t *testing.T) {
+	cases := map[string]int{
+		"":                   0,
+		"hello":              5,
+		"a\tb":               2,
+		"a\nb\rc":            3,
+		"a\x00b":             2,
+		"a\x1fb":             2,
+		"a\x7fb":             2,
+		"123 !?":             6,
+		"\x1b[31mred\x1b[0m": 3,
+	}
+	for input, want := range cases {
+		if got := StringWidth(input); got != want {
+			t.Errorf("StringWidth(%q)=%d want %d", input, got, want)
+		}
 	}
 }

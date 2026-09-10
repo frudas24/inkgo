@@ -5,7 +5,7 @@ package textutil
 // data-only so inkgo keeps zero runtime dependencies while UAX #29 GB11 uses
 // the real property instead of a coarse emoji/block approximation.
 // Source: Unicode 17.0 emoji-data.txt (2,848 code points).
-var extendedPictographicRanges = [...]struct{ lo, hi rune }{
+var extendedPictographicRanges = [...]runeRange{
 	{0xA9, 0xA9},
 	{0xAE, 0xAE},
 	{0x203C, 0x203C},
@@ -165,18 +165,5 @@ var extendedPictographicRanges = [...]struct{ lo, hi rune }{
 }
 
 func isExtendedPictographic(r rune) bool {
-	lo, hi := 0, len(extendedPictographicRanges)
-	for lo < hi {
-		mid := int(uint(lo+hi) >> 1)
-		rg := extendedPictographicRanges[mid]
-		switch {
-		case r < rg.lo:
-			hi = mid
-		case r > rg.hi:
-			lo = mid + 1
-		default:
-			return true
-		}
-	}
-	return false
+	return runeInRanges(r, extendedPictographicRanges[:])
 }

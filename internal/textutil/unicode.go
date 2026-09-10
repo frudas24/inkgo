@@ -86,53 +86,6 @@ func isZeroWidth(r rune) bool {
 	return false
 }
 
-func isEmojiCandidateRune(r rune) bool {
-	return r == '#' || r == '*' || (r >= '0' && r <= '9') ||
-		(r >= 0x2300 && r <= 0x23ff) ||
-		(r >= 0x2600 && r <= 0x27bf) ||
-		(r >= 0x1f000 && r <= 0x1faff)
-}
-
-// isEmojiPresentationRune is the compact terminal-relevant subset of Unicode's
-// Emoji_Presentation property. Text-default symbols such as U+26A0 WARNING SIGN
-// intentionally remain narrow unless VS16 requests emoji presentation.
-func isEmojiPresentationRune(r rune) bool {
-	switch {
-	case r == 0x231a || r == 0x231b,
-		r >= 0x23e9 && r <= 0x23ec,
-		r == 0x23f0 || r == 0x23f3,
-		r >= 0x25fd && r <= 0x25fe,
-		r >= 0x2614 && r <= 0x2615,
-		r >= 0x2648 && r <= 0x2653,
-		r == 0x267f || r == 0x2693 || r == 0x26a1,
-		r >= 0x26aa && r <= 0x26ab,
-		r >= 0x26bd && r <= 0x26be,
-		r >= 0x26c4 && r <= 0x26c5,
-		r == 0x26ce || r == 0x26d4 || r == 0x26ea,
-		r >= 0x26f2 && r <= 0x26f3,
-		r == 0x26f5 || r == 0x26fa || r == 0x26fd,
-		r == 0x2705 || r == 0x270a || r == 0x270b || r == 0x2728,
-		r == 0x274c || r == 0x274e,
-		r >= 0x2753 && r <= 0x2755,
-		r == 0x2757,
-		r >= 0x2795 && r <= 0x2797,
-		r == 0x27b0 || r == 0x27bf,
-		r >= 0x2b1b && r <= 0x2b1c,
-		r == 0x2b50 || r == 0x2b55,
-		r == 0x1f004 || r == 0x1f0cf || r == 0x1f18e,
-		r >= 0x1f191 && r <= 0x1f19a,
-		r == 0x1f201 || r == 0x1f21a || r == 0x1f22f,
-		r >= 0x1f232 && r <= 0x1f236,
-		r >= 0x1f238 && r <= 0x1f23a,
-		r >= 0x1f250 && r <= 0x1f251,
-		r >= 0x1f300 && r <= 0x1faff,
-		r >= 0x1f1e6 && r <= 0x1f1ff:
-		return true
-	default:
-		return false
-	}
-}
-
 func isKeycapBase(r rune) bool { return r == '#' || r == '*' || (r >= '0' && r <= '9') }
 
 // isWideRune follows wcwidth's conventional East Asian W/F ranges and treats
@@ -159,7 +112,10 @@ func RuneWidth(r rune) int {
 	if isZeroWidth(r) {
 		return 0
 	}
-	if isEmojiPresentationRune(r) || isWideRune(r) {
+	// East Asian W/F is cheap to classify and dominates ordinary CJK text.
+	// Emoji_Presentation starts at U+231A, so Latin and other low code points
+	// avoid a binary property-table lookup entirely.
+	if isWideRune(r) || (r >= 0x231a && isEmojiPresentationRune(r)) {
 		return 2
 	}
 	return 1
@@ -330,12 +286,67 @@ func Graphemes(s string) []Grapheme {
 	return out
 }
 
+func asciiStringWidth(s string) (int, bool) {
+	width := 0
+	for i := 0; i < len(s); i++ {
+		b := s[i]
+		if b >= utf8.RuneSelf || b == 0x1b {
+			return 0, false
+		}
+		if b > 0x1f && b != 0x7f {
+			width++
+		}
+	}
+	return width, true
+}
+
+func simpleStringWidth(s string) (int, bool) {
+	width := 0
+	for len(s) > 0 {
+		r, n := utf8.DecodeRuneInString(s)
+		if r == utf8.RuneError && n == 1 {
+			// Graphemes deliberately drops malformed UTF-8 bytes; fall back so
+			// malformed input keeps exactly the same sanitization policy.
+			return 0, false
+		}
+		switch {
+		case r == 0x200d, // ZWJ / GB11
+			r == 0xfe0e || r == 0xfe0f,   // text/emoji presentation selectors
+			r == 0x20e3,                  // combining enclosing keycap
+			r >= 0x1f1e6 && r <= 0x1f1ff, // regional-indicator pairing
+			r >= 0x1f3fb && r <= 0x1f3ff: // emoji modifiers attach to a base
+			return 0, false
+		}
+		width += RuneWidth(r)
+		s = s[n:]
+	}
+	return width, true
+}
+
 func StringWidth(s string) int {
 	if s == "" {
 		return 0
 	}
+	// Mirror the source fork's hot-path contract: pure ASCII without ANSI does
+	// not need grapheme segmentation. Controls (including TAB/CR/LF and DEL)
+	// occupy zero terminal cells. Besides being substantially faster for the
+	// common case, this keeps the exact Unicode property tables off ASCII paths.
+	if width, ok := asciiStringWidth(s); ok {
+		return width
+	}
 	if strings.IndexByte(s, 0x1b) >= 0 {
 		s = StripANSI(s)
+		// Colored ASCII is another common hot path. Once controls are stripped,
+		// avoid rebuilding grapheme state just to count ordinary bytes.
+		if width, ok := asciiStringWidth(s); ok {
+			return width
+		}
+	}
+	// Most Unicode text does not need cluster-dependent width rules. Combining
+	// marks are already zero width and ordinary W/F characters can be summed
+	// directly. Fall back only for sequences whose width depends on neighbors.
+	if width, ok := simpleStringWidth(s); ok {
+		return width
 	}
 	w := 0
 	for _, g := range Graphemes(s) {

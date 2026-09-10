@@ -187,6 +187,7 @@ go run ./examples/terminal-smoke
 - [`docs/validation/WINDOWS_NATIVE_INPUT.md`](docs/validation/WINDOWS_NATIVE_INPUT.md) — Windows native console input and resize validation
 - [`docs/validation/POST_V0.1.7_DEEP_AUDIT.md`](docs/validation/POST_V0.1.7_DEEP_AUDIT.md) — post-v0.1.7 Windows/ANSI/Unicode deep-audit evidence
 - [`docs/validation/PTY_INTEGRATION.md`](docs/validation/PTY_INTEGRATION.md) — real PTY/ConPTY end-to-end validation and the startup-resize window
+- [`docs/validation/POST_V0.1.10_FOLLOWUP.md`](docs/validation/POST_V0.1.10_FOLLOWUP.md) — post-v0.1.10 PTY/Unicode follow-up, exact Emoji 17 properties and width hot-path validation
 
 ## License
 
