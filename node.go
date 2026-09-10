@@ -42,6 +42,31 @@ type EventHandlers struct {
 
 var nodeCounter uint64
 
+type nodeMeasureCache struct {
+	valid          bool
+	text           string
+	style          Style
+	availW, availH int
+	result         measured
+}
+
+type nodeWrapCache struct {
+	valid     bool
+	text      string
+	width     int
+	mode      TextWrap
+	lines     []string
+	soft      []bool
+	graphemes [][]Grapheme
+}
+
+type nodeANSICache struct {
+	valid bool
+	text  string
+	base  TextStyle
+	items []StyledGrapheme
+}
+
 // Node is the Go-native host node replacing React's Fiber host tree.
 // It is intentionally concrete and inspectable: callers can keep refs and
 // mutate text/style/scroll state without a reconciliation layer.
@@ -83,6 +108,10 @@ type Node struct {
 	ActiveUntil  time.Time
 
 	MouseTracking bool
+
+	measureCache nodeMeasureCache
+	wrapCache    nodeWrapCache
+	ansiCache    nodeANSICache
 
 	dirty      bool
 	generation uint64
@@ -309,17 +338,29 @@ func (n *Node) removeChild(child *Node) {
 
 func (n *Node) Remove(child *Node) { n.removeChild(child) }
 
-func (n *Node) SetText(text string) {
-	if n.Text == text {
+func (n *Node) invalidateTextCaches() {
+	if n == nil {
 		return
 	}
-	n.Text = ExpandTabs(text)
+	n.measureCache = nodeMeasureCache{}
+	n.wrapCache = nodeWrapCache{}
+	n.ansiCache = nodeANSICache{}
+}
+
+func (n *Node) SetText(text string) {
+	expanded := ExpandTabs(text)
+	if n.Text == expanded {
+		return
+	}
+	n.Text = expanded
+	n.invalidateTextCaches()
 	n.MarkDirty()
 }
 
 func (n *Node) SetStyle(style Style) {
 	core.ApplyDefaults(&style)
 	n.Style = style
+	n.invalidateTextCaches()
 	n.MarkDirty()
 }
 

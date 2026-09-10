@@ -8,7 +8,7 @@ Do not translate React application code literally. Keep long-lived Go node refer
 | `<Text>` | `widgets.Text(...)` |
 | `<RawAnsi>` / `<Ansi>` | `widgets.RawANSI(...)` |
 | `<Link url>` | `widgets.Link(...)` |
-| `<Button onAction>` | `widgets.Button(...)` |
+| `<Button onAction>` | `widgets.Button(style, onAction, children...)` |
 | Button render prop | `ButtonWithState(..., func(ButtonState) []*Node {...})` |
 | `<ScrollBox>` | `widgets.ScrollBox(...)` |
 | `<Spacer>` / `<Newline>` | `widgets.Spacer()` / `widgets.Newline(n)` |
@@ -102,3 +102,18 @@ scheduler -> animation/timing layer
 ```
 
 The domain packages share canonical types, so `*widgets.Node` can be passed directly to `render.Renderer`, `interaction.HitTest` and `terminal.Runtime`.
+
+## Frame ownership for high-frequency embedding
+
+The safe default returns a stable `Frame.Screen` snapshot that remains valid after later renders. If profiling shows framebuffer-copy pressure, opt into renderer-owned borrowing:
+
+```go
+r := render.New(render.RenderOptions{
+    Width: 80, Height: 24,
+    BorrowFrameScreen: true,
+})
+frame := r.Render(root)
+// Consume frame.Screen before calling Render again. Do not retain it.
+```
+
+Use borrowed frames only when the lifetime rule is convenient. It is a performance option, not a required migration behavior.

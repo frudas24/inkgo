@@ -1,5 +1,21 @@
 # Changelog
 
+## Round 4 — 2026-09-09
+
+- fixed flex-wrap main-axis margin selection for column/column-reverse layouts;
+- fixed grow/shrink remainder allocation so zero-factor siblings never absorb rounding leftovers;
+- made grow/shrink redistribute remaining space after min/max constraints freeze an item;
+- fixed natural cross-size measurement for wrapped row/column containers;
+- serialized every runtime terminal write, including asynchronous terminal queries, behind one write gate so ANSI sequences cannot interleave;
+- preserved exact soft-wrap provenance (`SoftWrapEnd`) for selection, row shifting and translated blits, preventing significant spaces from disappearing when copying wrapped text;
+- hardened wide-cell atomicity in `SetCell`, `ClearRegion` and `Blit`; fuzzing found and permanently captured an orphan-spacer regression corpus;
+- switched the renderer to reusable internal double buffers while retaining stable `Frame.Screen` snapshots by default; added opt-in `BorrowFrameScreen` for high-frequency embedded loops;
+- added bounded per-node last-key caches for measurement, wrapping/graphemes and parsed ANSI, avoiding global cache growth;
+- made tab-expanded `SetText` idempotent;
+- added layout/render and screen invariant fuzzers, renderer benchmarks, concurrent-output regression tests and cache/provenance tests;
+- revalidated race detector, vet, Linux/Windows/macOS cross-builds and a separate external consumer importing every public domain package;
+- remains stdlib-only with zero vendor/runtime dependencies.
+
 ## Round 3 — 2026-09-09
 
 - inverted foundational dependencies: canonical style/color/length/geometry/key values now live in `internal/core` and the root keeps compatibility aliases;

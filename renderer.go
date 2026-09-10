@@ -19,6 +19,12 @@ type RenderOptions struct {
 	// when embedding under an unusual terminal multiplexer. Disable wins.
 	ForceExtendedKeys   bool
 	DisableExtendedKeys bool
+
+	// BorrowFrameScreen skips the stable Frame.Screen snapshot allocation and
+	// returns a renderer-owned double buffer. It is intended for high-frequency
+	// embedded loops that consume Frame.Screen before the next renders. The
+	// default false preserves stable snapshot semantics for general callers.
+	BorrowFrameScreen bool
 }
 
 type Cursor struct {
@@ -45,6 +51,7 @@ type Frame struct {
 type Renderer struct {
 	mu              sync.Mutex
 	prev            *Screen
+	back            *Screen
 	options         RenderOptions
 	entered         bool
 	lastRoot        *Node
@@ -67,6 +74,9 @@ func NewRenderer(opts RenderOptions) *Renderer {
 // clean redraw. Use after resize, terminal resume, tmux attach, or wake.
 func (r *Renderer) Invalidate() {
 	r.mu.Lock()
+	if r.prev != nil && r.back == nil {
+		r.back = r.prev
+	}
 	r.prev = nil
 	r.parked = nil
 	r.scrollTops = make(map[string]int)
@@ -189,7 +199,12 @@ func (r *Renderer) Render(root *Node) Frame {
 		screenH = height
 	}
 	screenH = max(1, screenH)
-	next := NewScreen(width, screenH)
+	next := r.back
+	if next == nil {
+		next = NewScreen(width, screenH)
+	} else {
+		next.Reset(width, screenH)
+	}
 	paintTree(next, root)
 	ApplySelectionOverlay(next, r.selection, r.selectionBg)
 	var searchMatches []MatchPosition
@@ -263,10 +278,19 @@ func (r *Renderer) Render(root *Node) Frame {
 	if r.options.SynchronizedOutput && patch != "" {
 		patch = BeginSyncUpdate + patch + EndSyncUpdate
 	}
-	r.prev = next.Clone()
+	frameScreen := next
+	if !r.options.BorrowFrameScreen {
+		frameScreen = next.Clone()
+	}
+	oldPrev := r.prev
+	r.prev = next
+	r.back = oldPrev
 	r.lastRoot = root
 	drainPending := hasPendingScroll(root)
-	return Frame{Screen: next, Size: sz, Patch: patch, Damage: dmg, Fullscreen: fullscreen, Cursor: cursor, SearchMatches: searchMatches, ScrollDrainPending: drainPending}
+	if root != nil {
+		root.clearDirtyRecursive()
+	}
+	return Frame{Screen: frameScreen, Size: sz, Patch: patch, Damage: dmg, Fullscreen: fullscreen, Cursor: cursor, SearchMatches: searchMatches, ScrollDrainPending: drainPending}
 }
 
 func RenderToScreen(root *Node, width int) (*Screen, int) {
@@ -657,23 +681,55 @@ func paintBorderText(screen *Screen, n *Node, r, clip Rect, style TextStyle) {
 	}
 }
 
+func cachedWrappedText(n *Node, width int) ([]string, []bool, [][]Grapheme) {
+	if n == nil {
+		return nil, nil, nil
+	}
+	mode := n.Style.TextWrap
+	if c := &n.wrapCache; c.valid && c.text == n.Text && c.width == width && c.mode == mode {
+		return c.lines, c.soft, c.graphemes
+	}
+	lines, soft := WrapTextLines(n.Text, width, mode)
+	clusters := make([][]Grapheme, len(lines))
+	for i, line := range lines {
+		clusters[i] = Graphemes(line)
+	}
+	n.wrapCache = nodeWrapCache{valid: true, text: n.Text, width: width, mode: mode, lines: lines, soft: soft, graphemes: clusters}
+	return lines, soft, clusters
+}
+
+func cachedParsedANSI(n *Node, base TextStyle) []StyledGrapheme {
+	if n == nil {
+		return nil
+	}
+	if c := &n.ansiCache; c.valid && c.text == n.Text && c.base == base {
+		return c.items
+	}
+	items := ParseANSI(n.Text, base)
+	n.ansiCache = nodeANSICache{valid: true, text: n.Text, base: base, items: items}
+	return items
+}
+
 func paintText(screen *Screen, n *Node, r, clip Rect, style TextStyle, href string) {
 	width := max(0, r.Width)
 	if width == 0 {
 		return
 	}
 	if n.Kind == NodeRawANSI {
-		paintANSILines(screen, n.Text, r, clip, style, href, n.Style.TextWrap)
+		paintANSILines(screen, n, r, clip, style, href, n.Style.TextWrap)
 		return
 	}
-	lines, soft := WrapTextLines(n.Text, width, n.Style.TextWrap)
+	lines, soft, clusters := cachedWrappedText(n, width)
 	y := r.Y
-	for lineIndex, line := range lines {
+	for lineIndex := range lines {
 		if y >= 0 && y < screen.Height && lineIndex < len(soft) && soft[lineIndex] {
 			screen.SoftWrap[y] = true
+			if lineIndex > 0 && y < len(screen.SoftWrapEnd) {
+				screen.SoftWrapEnd[y] = min(screen.Width, r.X+StringWidth(lines[lineIndex-1]))
+			}
 		}
 		x := r.X
-		graphemes := Graphemes(line)
+		graphemes := clusters[lineIndex]
 		graphemes = ReorderBidiGraphemes(graphemes)
 		for _, g := range graphemes {
 			if g.Width > 0 && x+g.Width <= r.X+r.Width && clip.Contains(Point{X: x, Y: y}) {
@@ -688,9 +744,9 @@ func paintText(screen *Screen, n *Node, r, clip Rect, style TextStyle, href stri
 	}
 }
 
-func paintANSILines(screen *Screen, text string, r, clip Rect, base TextStyle, baseHref string, mode TextWrap) {
+func paintANSILines(screen *Screen, n *Node, r, clip Rect, base TextStyle, baseHref string, mode TextWrap) {
 	// Preserve style/hyperlink while wrapping by cells rather than stripping ANSI.
-	parsed := ParseANSI(text, base)
+	parsed := cachedParsedANSI(n, base)
 	parsed = ReorderBidiStyled(parsed)
 	x, y := r.X, r.Y
 	href := baseHref
@@ -710,6 +766,7 @@ func paintANSILines(screen *Screen, text string, r, clip Rect, base TextStyle, b
 			if mode == TextWrapTruncate || mode == TextWrapTruncateEnd || mode == TextWrapTruncateMiddle || mode == TextWrapTruncateStart {
 				return
 			}
+			previousEnd := x
 			x = r.X
 			y++
 			if y >= r.Y+r.Height {
@@ -717,6 +774,9 @@ func paintANSILines(screen *Screen, text string, r, clip Rect, base TextStyle, b
 			}
 			if y >= 0 && y < screen.Height {
 				screen.SoftWrap[y] = true
+				if y < len(screen.SoftWrapEnd) {
+					screen.SoftWrapEnd[y] = min(screen.Width, previousEnd)
+				}
 			}
 		}
 		gh := g.Hyperlink

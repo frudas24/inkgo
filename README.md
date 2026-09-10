@@ -11,7 +11,7 @@ The port preserves the behavior useful to applications while using Go-native own
 - ScrollBox sticky/follow behavior, anchors/clamps, smooth pending-wheel drain, xterm.js adaptive drain and fullscreen hardware scroll
 - Unicode cell measurement, combining marks, wide glyphs, emoji/ZWJ clusters, tab stops and contextual mixed RTL/numeric software bidi fallback
 - SGR/16/256/RGB ANSI, OSC-8 hyperlinks and raw styled ANSI
-- cell `Screen`, wide-cell spacer correctness, damage bounds and incremental patching
+- cell `Screen`, fuzz-hardened wide-cell atomicity, soft-wrap provenance, damage bounds and incremental patching
 - safe relative updates on the main screen; absolute diff plus `DECSTBM + SU/SD` in alternate screen
 - focus/tab order, capture+bubble keyboard/focus/paste/resize events and scroll-aware hit testing
 - SGR + X10 mouse, click-on-release, drag suppression, hover, multi-click word/line selection and drag-edge scrolling
@@ -25,6 +25,7 @@ The port preserves the behavior useful to applications while using Go-native own
 - title, bell, notifications, version-gated progress and tab-status control sequences
 - shared `scheduler.Clock` for synchronized/visibility-aware application animations
 - raw/VT terminal support for Linux, macOS and Windows
+- serialized terminal writes, renderer double buffering and bounded per-node text/ANSI caches for embedded/high-frequency use
 
 **External Go dependencies: zero.**
 
@@ -103,6 +104,22 @@ _, err := rt.RenderSettled()
 
 You do not have to give the library ownership of the process loop.
 
+
+## Renderer ownership and performance
+
+`Frame.Screen` is stable by default and can safely be retained after the next render. For a hot loop that consumes each frame immediately, `BorrowFrameScreen` avoids that snapshot clone:
+
+```go
+r := render.New(render.RenderOptions{
+    Width: 80, Height: 24,
+    BorrowFrameScreen: true,
+})
+frame := r.Render(root)
+// use frame.Screen now; a later Render may reuse its storage
+```
+
+Round-4 benchmarks on the validation host measured the borrowed path at about **1.47 ms / 441 KB per frame** versus **1.87 ms / 966 KB** for the stable-snapshot path on the 40-row benchmark tree. Treat those numbers as comparative development measurements, not universal throughput guarantees.
+
 ## Examples and development
 
 ```bash
@@ -114,6 +131,8 @@ go vet ./...
 go test ./...
 go test -race ./...
 go test ./internal/inputparser -run='^$' -fuzz=FuzzParserNeverPanics -fuzztime=3s
+go test . -run='^$' -fuzz=FuzzScreenWideCellInvariants -fuzztime=3s
+go test . -run='^$' -fuzz=FuzzLayoutAndRenderInvariants -fuzztime=3s
 ```
 
 See `ARCHITECTURE.md` for package boundaries, `MIGRATION.md` for TS/React-to-Go mappings, and `PORT_STATUS.md` for the remaining parity boundary.

@@ -1,4 +1,4 @@
-# Port status and parity boundary — round 3
+# Port status and parity boundary — round 4
 
 ## Source audited
 
@@ -6,52 +6,50 @@ Input archive SHA-256:
 
 `d88df225488bc110916d0b3bfbc21950d0748406bafa4e9fed5559501e68e8fc`
 
-The supplied `ink/` tree contains about 20k TypeScript/TSX lines and is a customized Ink fork: alternate-screen rendering, scroll virtualization, selection, mouse/hit testing, search overlays, terminal response parsing, ANSI internals, screen diffing and performance/lifecycle work are local behavior.
+The supplied `ink/` tree is a customized Ink fork with alternate-screen rendering, scroll virtualization, selection, mouse/hit testing, search overlays, terminal protocol negotiation, ANSI internals, screen diffing and lifecycle/performance work.
 
 ## Functional parity estimate
 
-Round 1 was conservatively assessed at about 90%, round 2 at about 97%. After the round-3 architecture and protocol campaign, practical behavioral parity is **about 98%** for functionality exposed to a Go TUI consumer.
+Round 1 was conservatively assessed at about 90%, round 2 at about 97%, and round 3 at about 98%. After the round-4 differential/property campaign, practical behavioral parity is **about 99%** for functionality exposed to a Go TUI consumer.
 
-This remains a behavioral estimate, not a byte-for-byte implementation-identity claim. React Fiber, JS object caches and the omitted native Yoga wrapper are intentionally not dependencies of the Go design.
+This is deliberately a behavioral estimate rather than a byte-for-byte implementation-identity claim. React Fiber, JavaScript cache identity, the omitted native Yoga wrapper and `bidi-js` are not runtime dependencies of the Go design.
 
-Round 3 adds or strengthens:
+Round 4 closes several real parity defects rather than adding cosmetic API:
 
-- real leaf implementations for canonical value/style/geometry, input parsing, escape-boundary scanning, text measurement/wrapping/tabstops and scheduler timing;
-- root compatibility aliases so existing round-1/2 consumers keep the same public type identity;
-- contextual bidi levels for mixed RTL + numbers + neutrals, preserving numeric order during visual RTL reversal;
-- centralized terminal capability snapshots, including XTVERSION/xterm.js identity, synchronized output, extended keys, software bidi, cursor-yank quirks and OSC 9;4 progress support;
-- source-compatible OSC 21337 tab-status gating;
-- imperative Go equivalents for title, bell, terminal notifications, progress and tab-status hooks;
-- `Runtime.Start` / `Runtime.Close` lifecycle for applications that own their own event loop;
-- parser fragmentation regression tests and a fuzz target; a smoke campaign executed about 90k inputs without panic;
-- repeat validation from a completely separate Go module that imports the domain packages.
+- flex wrapping now uses the correct main-axis margins in row and column modes;
+- flex grow/shrink excludes zero-factor siblings from remainder distribution and redistributes space around min/max constraints;
+- wrapped containers measure their natural cross dimension from actual flex lines;
+- runtime output is serialized so render patches, queries, notifications and other escape sequences cannot interleave under concurrency;
+- selection retains exact soft-wrap content-end provenance across painting, scroll shifts and translated blits;
+- wide glyph heads/tails remain atomic through overlapping writes, clears and blits;
+- renderer-owned double buffering reduces frame allocation pressure while default frames remain stable snapshots;
+- high-frequency embedders can opt into `BorrowFrameScreen`;
+- bounded per-node last-key caches reuse text measurement, wrapping/graphemes and ANSI parsing without an unbounded global cache;
+- fuzz campaigns cover raw input parsing, screen wide-cell invariants, and randomized flex-layout/render invariants.
 
-## Validation
+## Round-4 validation
 
-Round-3 checkpoint validation:
+Final validation is recorded in `ROUND4_VALIDATION.md`. The release gate includes:
 
 - `gofmt` clean;
 - `go test ./...` green;
 - `go vet ./...` green;
 - `go test -race ./...` green;
-- parser fuzz smoke: ~90.6k executions / 3 seconds, no panic;
+- parser fuzz smoke green;
+- wide-cell screen fuzz smoke green, including a minimized permanent regression corpus;
+- randomized layout/render fuzz smoke green;
 - `go list -m all`: only `github.com/frudas24/inkgo`;
-- `GOOS=linux GOARCH=amd64 go build ./...` green;
-- `GOOS=windows GOARCH=amd64 go build ./...` green;
-- `GOOS=darwin GOARCH=amd64 go build ./...` green;
-- `GOOS=darwin GOARCH=arm64 go build ./...` green;
-- external consumer module using `widgets/layout/render/input/selection/terminal/scheduler` green under `go test` + `go vet`.
+- Linux amd64, Windows amd64, macOS amd64 and macOS arm64 cross-builds green;
+- separate external consumer module green under `go test` + `go vet`.
 
-## Remaining ~2% boundary
+## Remaining ~1% boundary
 
-1. **Exact Yoga edge behavior.** Common flex behavior and the exposed style surface are implemented. Obscure upstream Yoga rounding/cache/min-content corner cases are not promised byte-for-byte because the archive omitted its native Yoga implementation.
+1. **Full Unicode Bidirectional Algorithm.** Practical mixed LTR/RTL/numeric/neutral terminal text is handled, but every nested UAX #9 embedding/isolate/control-path combination is not claimed without bringing in a full Unicode bidi implementation.
 
-2. **Full Unicode Bidirectional Algorithm.** Round 3 handles substantially better mixed RTL/numeric/neutral terminal text. Explicit nested UAX #9 embeddings/isolates and every pathological bidi-control combination are still outside the dependency-free claim.
+2. **Microscopic Yoga identity.** Common and advanced exposed flex behavior is implemented and property-tested. Byte-identical rounding/cache/min-content behavior for obscure Yoga cases is not promised because the archive omitted its native Yoga source and the project intentionally avoids a vendor dependency.
 
-3. **Terminal-emulator micro-quirks.** Important xterm.js/tmux/Windows/Kitty/VTE paths are represented. Rare legacy-emulator protocol behavior still requires real integration fixtures to justify special handling.
+3. **Rare terminal-emulator quirks.** Important Kitty/xterm.js/tmux/VTE/Windows paths are covered. Legacy emulator quirks should only be added from a reproducible failing fixture, not speculative TERM-name branches.
 
-4. **Error source excerpts.** `ErrorOverview` renders Go error chains, but ordinary Go `error` values do not universally carry JS-style source-location excerpts, so the port does not manufacture them.
+4. **Implementation-specific optimizers.** The Go renderer now has damage diffing, hardware fullscreen scroll, double buffering and bounded text caches. JavaScript/Fiber-specific optimizer identity is not a parity target when observable behavior is equivalent.
 
-5. **Internal optimization identity.** Damage diffing, safe main-screen output and fullscreen hardware scroll are present. JS-specific Fiber/node/blit cache heuristics are not parity targets unless profiling demonstrates a Go-side need.
-
-The project remains **stdlib-only**. Vendor code should only be introduced if a real failing integration fixture demonstrates behavior that is both important and unreasonable to implement natively.
+For the project's stated goal—**same practical function, maintainable native Go, fewer dependencies**—the remaining boundary does not justify vendoring code today.

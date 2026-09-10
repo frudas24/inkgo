@@ -72,6 +72,9 @@ func measureNode(n *Node, availW, availH int) measured {
 	}
 
 	if n.Kind == NodeText || n.Kind == NodeRawANSI {
+		if c := &n.measureCache; c.valid && c.text == n.Text && c.style == s && c.availW == availW && c.availH == availH {
+			return c.result
+		}
 		txt := nodeText(n)
 		widthForWrap := innerAvailW
 		if widthForWrap < 0 {
@@ -87,7 +90,9 @@ func measureNode(n *Node, availW, availH int) measured {
 		}
 		w = applyMinMax(w, s.MinWidth, s.MaxWidth, availW)
 		h = applyMinMax(h, s.MinHeight, s.MaxHeight, availH)
-		return measured{w, h}
+		result := measured{w, h}
+		n.measureCache = nodeMeasureCache{valid: true, text: n.Text, style: s, availW: availW, availH: availH, result: result}
+		return result
 	}
 
 	flow := make([]*Node, 0, len(n.Children))
@@ -101,32 +106,7 @@ func measureNode(n *Node, availW, availH int) measured {
 	if dir == "" {
 		dir = Row
 	}
-	gap := core.GapMain(s, dir)
-	contentW, contentH := 0, 0
-	if len(flow) > 0 {
-		switch dir {
-		case Row, RowReverse:
-			for i, c := range flow {
-				cm := measureNode(c, innerAvailW, innerAvailH)
-				m := core.MarginEdges(c.Style)
-				if i > 0 {
-					contentW += gap
-				}
-				contentW += cm.w + m.Left + m.Right
-				contentH = max(contentH, cm.h+m.Top+m.Bottom)
-			}
-		default:
-			for i, c := range flow {
-				cm := measureNode(c, innerAvailW, innerAvailH)
-				m := core.MarginEdges(c.Style)
-				if i > 0 {
-					contentH += gap
-				}
-				contentH += cm.h + m.Top + m.Bottom
-				contentW = max(contentW, cm.w+m.Left+m.Right)
-			}
-		}
-	}
+	contentW, contentH := measureFlowContent(flow, s, dir, innerAvailW, innerAvailH)
 
 	w := contentW + extraW
 	h := contentH + extraH
@@ -139,6 +119,71 @@ func measureNode(n *Node, availW, availH int) measured {
 	w = applyMinMax(w, s.MinWidth, s.MaxWidth, availW)
 	h = applyMinMax(h, s.MinHeight, s.MaxHeight, availH)
 	return measured{w, h}
+}
+
+// measureFlowContent performs the intrinsic measurement pass for flex
+// children. In particular, wrapped containers must account for every flex
+// line in the cross axis; measuring them as one unwrapped line underestimates
+// auto height/width and can clip content before the layout pass even runs.
+func measureFlowContent(flow []*Node, s Style, dir FlexDirection, availW, availH int) (int, int) {
+	if len(flow) == 0 {
+		return 0, 0
+	}
+	mainGap := max(0, core.GapMain(s, dir))
+	crossGap := max(0, core.GapCross(s, dir))
+	mainAvail := availW
+	if dir == Column || dir == ColumnReverse {
+		mainAvail = availH
+	}
+	wrap := s.FlexWrap != "" && s.FlexWrap != NoWrap && mainAvail >= 0
+
+	type measuredItem struct{ main, cross int }
+	items := make([]measuredItem, 0, len(flow))
+	for _, c := range flow {
+		cm := measureNode(c, availW, availH)
+		m := core.MarginEdges(c.Style)
+		if dir == Row || dir == RowReverse {
+			items = append(items, measuredItem{main: cm.w + m.Left + m.Right, cross: cm.h + m.Top + m.Bottom})
+		} else {
+			items = append(items, measuredItem{main: cm.h + m.Top + m.Bottom, cross: cm.w + m.Left + m.Right})
+		}
+	}
+
+	lineMain, lineCross := 0, 0
+	maxMain, totalCross, lines := 0, 0, 0
+	flush := func() {
+		if lineMain == 0 && lineCross == 0 {
+			return
+		}
+		if lines > 0 {
+			totalCross += crossGap
+		}
+		totalCross += lineCross
+		maxMain = max(maxMain, lineMain)
+		lineMain, lineCross = 0, 0
+		lines++
+	}
+	for _, it := range items {
+		need := it.main
+		if lineMain > 0 {
+			need += mainGap
+		}
+		if wrap && lineMain > 0 && lineMain+need > mainAvail {
+			flush()
+			need = it.main
+		}
+		if lineMain > 0 {
+			lineMain += mainGap
+		}
+		lineMain += it.main
+		lineCross = max(lineCross, it.cross)
+	}
+	flush()
+
+	if dir == Row || dir == RowReverse {
+		return maxMain, totalCross
+	}
+	return totalCross, maxMain
 }
 
 // ComputeLayout calculates node rectangles. In normal mode the root has a
@@ -170,6 +215,10 @@ type flexItem struct {
 	cross         int
 	explicitCross bool
 	grow, shrink  float64
+	minMain       int
+	maxMain       int
+	hasMinMain    bool
+	hasMaxMain    bool
 }
 
 type flexLine struct {
@@ -204,6 +253,8 @@ func measureItem(n *Node, dir FlexDirection, mainAvail, crossAvail int) *flexIte
 		}
 		it.cross = ms.h
 		_, it.explicitCross = resolveLength(n.Style.Height, crossAvail)
+		it.minMain, it.hasMinMain = resolveLength(n.Style.MinWidth, mainAvail)
+		it.maxMain, it.hasMaxMain = resolveLength(n.Style.MaxWidth, mainAvail)
 	} else {
 		it.baseMain = ms.h
 		if v, ok := resolveLength(n.Style.FlexBasis, mainAvail); ok {
@@ -211,12 +262,20 @@ func measureItem(n *Node, dir FlexDirection, mainAvail, crossAvail int) *flexIte
 		}
 		it.cross = ms.w
 		_, it.explicitCross = resolveLength(n.Style.Width, crossAvail)
+		it.minMain, it.hasMinMain = resolveLength(n.Style.MinHeight, mainAvail)
+		it.maxMain, it.hasMaxMain = resolveLength(n.Style.MaxHeight, mainAvail)
 	}
 	it.main = max(0, it.baseMain)
+	if it.hasMinMain {
+		it.main = max(it.main, it.minMain)
+	}
+	if it.hasMaxMain {
+		it.main = min(it.main, it.maxMain)
+	}
 	return it
 }
 
-func makeFlexLines(items []*flexItem, mainAvail, gap int, wrap FlexWrap) []*flexLine {
+func makeFlexLines(items []*flexItem, dir FlexDirection, mainAvail, gap int, wrap FlexWrap) []*flexLine {
 	if len(items) == 0 {
 		return nil
 	}
@@ -226,27 +285,27 @@ func makeFlexLines(items []*flexItem, mainAvail, gap int, wrap FlexWrap) []*flex
 			if i > 0 {
 				line.mainUsed += gap
 			}
-			line.mainUsed += it.main + mainMargins(it, false)
+			line.mainUsed += it.main + flexMainMargins(it, dir)
 		}
 		return []*flexLine{line}
 	}
 	var lines []*flexLine
 	cur := &flexLine{}
 	for _, it := range items {
-		need := it.main + mainMargins(it, false)
+		need := it.main + flexMainMargins(it, dir)
 		if len(cur.items) > 0 {
 			need += gap
 		}
 		if len(cur.items) > 0 && cur.mainUsed+need > mainAvail {
 			lines = append(lines, cur)
 			cur = &flexLine{}
-			need = it.main + mainMargins(it, false)
+			need = it.main + flexMainMargins(it, dir)
 		}
 		if len(cur.items) > 0 {
 			cur.mainUsed += gap
 		}
 		cur.items = append(cur.items, it)
-		cur.mainUsed += it.main + mainMargins(it, false)
+		cur.mainUsed += it.main + flexMainMargins(it, dir)
 	}
 	if len(cur.items) > 0 {
 		lines = append(lines, cur)
@@ -288,31 +347,9 @@ func distributeMain(line *flexLine, dir FlexDirection, mainAvail, gap int) {
 	}
 	free := mainAvail - used
 	if free > 0 && totalGrow > 0 {
-		remain := free
-		for i, it := range line.items {
-			add := 0
-			if i == len(line.items)-1 {
-				add = remain
-			} else if it.grow > 0 {
-				add = int(math.Floor(float64(free) * it.grow / totalGrow))
-				remain -= add
-			}
-			it.main += add
-		}
+		distributeGrow(line.items, free, totalGrow)
 	} else if free < 0 && totalShrinkWeight > 0 {
-		need := -free
-		remain := need
-		for i, it := range line.items {
-			weight := maxFloat(0, it.shrink) * float64(max(1, it.baseMain))
-			cut := 0
-			if i == len(line.items)-1 {
-				cut = min(remain, it.main)
-			} else if weight > 0 {
-				cut = min(it.main, int(math.Floor(float64(need)*weight/totalShrinkWeight)))
-				remain -= cut
-			}
-			it.main -= cut
-		}
+		distributeShrink(line.items, -free, totalShrinkWeight)
 	}
 	line.mainUsed = 0
 	for i, it := range line.items {
@@ -320,6 +357,129 @@ func distributeMain(line *flexLine, dir FlexDirection, mainAvail, gap int) {
 			line.mainUsed += gap
 		}
 		line.mainUsed += it.main + flexMainMargins(it, dir)
+	}
+}
+
+// distributeGrow apportions integer terminal cells only to items that actually
+// participate in flex-grow. Keeping the remainder among eligible items avoids
+// a subtle parity bug where an ineligible last sibling accidentally absorbed
+// all rounding remainder.
+func growCapacity(it *flexItem) int {
+	if it == nil || it.grow <= 0 {
+		return 0
+	}
+	if !it.hasMaxMain {
+		return int(^uint(0) >> 2)
+	}
+	return max(0, it.maxMain-it.main)
+}
+
+func shrinkCapacity(it *flexItem) int {
+	if it == nil || it.shrink <= 0 {
+		return 0
+	}
+	lo := 0
+	if it.hasMinMain {
+		lo = it.minMain
+	}
+	return max(0, it.main-lo)
+}
+
+// distributeGrow allocates free cells among positive flex-grow siblings while
+// honoring max-main constraints. If one item freezes at maxWidth/maxHeight,
+// its unused share is redistributed to the remaining flexible siblings.
+func distributeGrow(items []*flexItem, free int, _ float64) {
+	remaining := free
+	for remaining > 0 {
+		active := make([]*flexItem, 0, len(items))
+		total := 0.0
+		for _, it := range items {
+			if growCapacity(it) > 0 {
+				active = append(active, it)
+				total += it.grow
+			}
+		}
+		if len(active) == 0 || total <= 0 {
+			return
+		}
+
+		before := remaining
+		budget := remaining
+		for _, it := range active {
+			share := int(math.Floor(float64(budget) * it.grow / total))
+			if share <= 0 {
+				continue
+			}
+			add := min(share, growCapacity(it), remaining)
+			it.main += add
+			remaining -= add
+		}
+		// Integer shares can all round to zero. Spend remainder one cell at a
+		// time only among still-eligible items; this is bounded by active count
+		// per round, not by the full free-space magnitude in the common case.
+		for _, it := range active {
+			if remaining == 0 {
+				break
+			}
+			if growCapacity(it) <= 0 {
+				continue
+			}
+			it.main++
+			remaining--
+		}
+		if remaining == before {
+			return
+		}
+	}
+}
+
+// distributeShrink mirrors Yoga's scaled shrink weighting and honors
+// minWidth/minHeight freezes, redistributing any constrained share.
+func distributeShrink(items []*flexItem, need int, _ float64) {
+	remaining := need
+	for remaining > 0 {
+		active := make([]*flexItem, 0, len(items))
+		total := 0.0
+		for _, it := range items {
+			if shrinkCapacity(it) <= 0 {
+				continue
+			}
+			weight := it.shrink * float64(max(1, it.baseMain))
+			if weight <= 0 {
+				continue
+			}
+			active = append(active, it)
+			total += weight
+		}
+		if len(active) == 0 || total <= 0 {
+			return
+		}
+
+		before := remaining
+		budget := remaining
+		for _, it := range active {
+			weight := it.shrink * float64(max(1, it.baseMain))
+			share := int(math.Floor(float64(budget) * weight / total))
+			if share <= 0 {
+				continue
+			}
+			cut := min(share, shrinkCapacity(it), remaining)
+			it.main -= cut
+			remaining -= cut
+		}
+		for _, it := range active {
+			if remaining == 0 {
+				break
+			}
+			if shrinkCapacity(it) <= 0 {
+				continue
+			}
+			it.main--
+			remaining--
+		}
+		if remaining == before {
+			return
+		}
 	}
 }
 
@@ -425,7 +585,7 @@ func layoutNode(ctx *layoutCtx, n *Node, assigned Rect, forceW, forceH bool) {
 	for _, c := range flow {
 		items = append(items, measureItem(c, dir, mainAvail, crossAvail))
 	}
-	lines := makeFlexLines(items, mainAvail, gapMain, s.FlexWrap)
+	lines := makeFlexLines(items, dir, mainAvail, gapMain, s.FlexWrap)
 
 	// First pass: distribute main sizes and recompute cross sizes under the
 	// actual allocated main width. This is necessary for wrapped text.

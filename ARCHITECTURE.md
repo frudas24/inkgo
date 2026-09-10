@@ -21,7 +21,7 @@ The root package remains a convenience/compatibility facade. New application cod
 
 ## Dependency direction
 
-Round 3 begins the internal inversion away from a god package. Stable leaf concepts now own their implementations:
+Rounds 3–4 continue the internal inversion away from a god package. Stable leaf concepts now own their implementations:
 
 ```text
 internal/core
@@ -58,7 +58,7 @@ The same principle applies to the long-lived `*Node`: domain packages currently 
 
 ## Ownership model
 
-The application owns a long-lived `*Node` tree. Node mutation (`SetText`, `SetStyle`, `SetChildren`, scrolling, handlers) marks the relevant path dirty. `Renderer` owns physical-screen history and emits only terminal damage. `Runtime` owns terminal lifecycle and event orchestration when requested.
+The application owns a long-lived `*Node` tree. Node mutation (`SetText`, `SetStyle`, `SetChildren`, scrolling, handlers) marks the relevant path dirty. `Renderer` owns physical-screen history, reusable double buffers and emits only terminal damage. `Runtime` owns terminal lifecycle and event orchestration when requested. Runtime writes are serialized through one gate, including asynchronous query traffic, so escape sequences cannot interleave.
 
 There is no hidden React reconciler, virtual DOM, Node process or sidecar.
 
@@ -77,9 +77,18 @@ Runtime.Close()
 
 ## State and concurrency
 
-Application-owned node mutation and callbacks should be serialized by the application's UI/event goroutine. Internally, parser state, query bookkeeping, renderer physical-screen state, lifecycle state and the shared scheduler protect their own concurrent state where needed.
+Application-owned node mutation and callbacks should be serialized by the application's UI/event goroutine. A node tree is therefore a single-UI-owner object, not a concurrent mutable graph. Internally, parser state, query bookkeeping, terminal writes, renderer physical-screen state, lifecycle state and the shared scheduler protect their own concurrent state where needed.
 
 `scheduler.Clock` consolidates animation wake-ups: passive subscribers do not keep the timer alive, visible animations can opt into keep-alive, and terminal blur can switch the shared clock to a slower cadence.
+
+
+## Rendering ownership and caches
+
+The renderer keeps two reusable internal `Screen` buffers. `Frame.Screen` is a stable clone by default so callers may retain it safely across later renders. High-frequency applications may set `RenderOptions.BorrowFrameScreen=true`; that frame then borrows renderer-owned storage and must be consumed before subsequent renders. This opt-in makes lifetime semantics explicit rather than silently returning mutable pooled memory.
+
+Text nodes keep only a bounded **last-key** cache for measurement, wrapping/graphemes and ANSI parsing. There is no package-global LRU and no unbounded retention of dynamic terminal content. Cache keys include the observable node text/style/available size, so direct public-field changes cannot reuse a mismatched entry; setters also invalidate eagerly.
+
+`Screen.SoftWrapEnd` stores the exact exclusive content-end column associated with a continuation row. This provenance travels with vertical shifts and coordinate-translating blits, allowing selection extraction to preserve meaningful spaces at wrap boundaries. Wide glyph head/tail pairs are normalized atomically after writes, clears and blits.
 
 ## Rendering pipeline
 

@@ -123,12 +123,24 @@ type Runtime struct {
 	pendingLink   *time.Timer
 
 	lifecycleMu     sync.Mutex
+	writeMu         sync.Mutex
 	incompleteMu    sync.Mutex
 	incompleteTimer *time.Timer
 	raw             *RawTerminal
 	outputRestore   func() error
 	entered         bool
 	stopped         atomic.Bool
+}
+
+type runtimeWriter struct{ rt *Runtime }
+
+func (w runtimeWriter) Write(p []byte) (int, error) {
+	if w.rt == nil || w.rt.Out == nil {
+		return len(p), nil
+	}
+	w.rt.writeMu.Lock()
+	defer w.rt.writeMu.Unlock()
+	return w.rt.Out.Write(p)
 }
 
 func NewRuntime(root *Node, in io.Reader, out io.Writer, opts RenderOptions) *Runtime {
@@ -155,7 +167,7 @@ func NewRuntime(root *Node, in io.Reader, out io.Writer, opts RenderOptions) *Ru
 		MaxScrollDrainFrames: 64,
 	}
 	if out != nil {
-		rt.Querier = NewTerminalQuerier(out)
+		rt.Querier = NewTerminalQuerier(runtimeWriter{rt: rt})
 	}
 	return rt
 }
@@ -204,6 +216,8 @@ func (rt *Runtime) WriteRaw(data string) error {
 	if rt == nil || rt.Out == nil || data == "" {
 		return nil
 	}
+	rt.writeMu.Lock()
+	defer rt.writeMu.Unlock()
 	_, err := io.WriteString(rt.Out, data)
 	return err
 }
@@ -239,7 +253,11 @@ func (rt *Runtime) RefreshSize() {
 func (rt *Runtime) Render() (Frame, error) {
 	rt.RefreshSize()
 	rt.configureScrollPolicy()
-	return rt.Renderer.WriteFrame(rt.Out, rt.Root)
+	frame := rt.Renderer.Render(rt.Root)
+	if frame.Patch == "" {
+		return frame, nil
+	}
+	return frame, rt.WriteRaw(frame.Patch)
 }
 
 func (rt *Runtime) configureScrollPolicy() {
@@ -406,7 +424,7 @@ func (rt *Runtime) CopySelection(clear bool) (text string, path ClipboardPath, e
 	}
 	sequence, path := SetClipboard(text)
 	if rt.Out != nil && sequence != "" {
-		if _, err = io.WriteString(rt.Out, sequence); err != nil {
+		if err = rt.WriteRaw(sequence); err != nil {
 			return text, path, err
 		}
 	}
@@ -819,7 +837,7 @@ func (rt *Runtime) ReassertTerminalModes(includeAltScreen bool) {
 	}
 	sequence := rt.Renderer.ReassertSequence(rt.Root, includeAltScreen)
 	if sequence != "" {
-		_, _ = io.WriteString(rt.Out, sequence)
+		_ = rt.WriteRaw(sequence)
 	}
 	rt.lifecycleMu.Unlock()
 	if includeAltScreen {
@@ -836,7 +854,7 @@ func (rt *Runtime) SuspendTerminal() {
 	if !rt.entered {
 		return
 	}
-	_, _ = io.WriteString(rt.Out, rt.Renderer.ExitSequence(rt.Root))
+	_ = rt.WriteRaw(rt.Renderer.ExitSequence(rt.Root))
 	if rt.raw != nil {
 		_ = rt.raw.Restore()
 		rt.raw = nil
@@ -864,7 +882,7 @@ func (rt *Runtime) ResumeTerminal() {
 		}
 	}
 	rt.Renderer.Invalidate()
-	_, _ = io.WriteString(rt.Out, rt.Renderer.EnterSequence(rt.Root))
+	_ = rt.WriteRaw(rt.Renderer.EnterSequence(rt.Root))
 	rt.entered = true
 	rt.RefreshSize()
 	_, _ = rt.Render()
@@ -884,7 +902,7 @@ func (rt *Runtime) enterTerminal() error {
 			rt.outputRestore = restore
 		}
 	}
-	if _, err := io.WriteString(rt.Out, rt.Renderer.EnterSequence(rt.Root)); err != nil {
+	if err := rt.WriteRaw(rt.Renderer.EnterSequence(rt.Root)); err != nil {
 		return err
 	}
 	rt.entered = true
@@ -903,7 +921,7 @@ func (rt *Runtime) leaveTerminal() {
 		rt.Querier.Close()
 	}
 	if rt.entered {
-		_, _ = io.WriteString(rt.Out, rt.Renderer.ExitSequence(rt.Root))
+		_ = rt.WriteRaw(rt.Renderer.ExitSequence(rt.Root))
 	}
 	if rt.raw != nil {
 		_ = rt.raw.Restore()

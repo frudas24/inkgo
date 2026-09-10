@@ -490,6 +490,16 @@ func extractSelectionRow(screen *Screen, row, start, end int) string {
 	}
 	start = max(0, start)
 	end = min(screen.Width-1, end)
+	contentEnd := 0
+	if row+1 < screen.Height && row+1 < len(screen.SoftWrap) && screen.SoftWrap[row+1] && row+1 < len(screen.SoftWrapEnd) {
+		contentEnd = screen.SoftWrapEnd[row+1]
+		if contentEnd > 0 {
+			end = min(end, contentEnd-1)
+		}
+	}
+	if start > end {
+		return ""
+	}
 	var b strings.Builder
 	for x := start; x <= end; x++ {
 		c := screen.Cells[screen.index(x, row)]
@@ -501,6 +511,9 @@ func extractSelectionRow(screen *Screen, row, start, end int) string {
 		} else {
 			b.WriteString(c.Char)
 		}
+	}
+	if contentEnd > 0 {
+		return b.String()
 	}
 	return strings.TrimRight(b.String(), " ")
 }

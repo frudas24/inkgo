@@ -25,6 +25,10 @@ type Screen struct {
 	Width, Height int
 	Cells         []Cell
 	SoftWrap      []bool
+	// SoftWrapEnd[row] is the absolute exclusive content-end column of
+	// row-1 when SoftWrap[row] is true. It preserves significant spaces at
+	// wrap boundaries without copying unwritten terminal padding.
+	SoftWrapEnd []int
 }
 
 func NewScreen(width, height int) *Screen {
@@ -49,6 +53,12 @@ func (s *Screen) Reset(width, height int) {
 		s.SoftWrap = s.SoftWrap[:height]
 		clear(s.SoftWrap)
 	}
+	if cap(s.SoftWrapEnd) < height {
+		s.SoftWrapEnd = make([]int, height)
+	} else {
+		s.SoftWrapEnd = s.SoftWrapEnd[:height]
+		clear(s.SoftWrapEnd)
+	}
 	for i := range s.Cells {
 		s.Cells[i].Char = " "
 	}
@@ -58,9 +68,10 @@ func (s *Screen) Clone() *Screen {
 	if s == nil {
 		return nil
 	}
-	out := &Screen{Width: s.Width, Height: s.Height, Cells: make([]Cell, len(s.Cells)), SoftWrap: make([]bool, len(s.SoftWrap))}
+	out := &Screen{Width: s.Width, Height: s.Height, Cells: make([]Cell, len(s.Cells)), SoftWrap: make([]bool, len(s.SoftWrap)), SoftWrapEnd: make([]int, len(s.SoftWrapEnd))}
 	copy(out.Cells, s.Cells)
 	copy(out.SoftWrap, s.SoftWrap)
+	copy(out.SoftWrapEnd, s.SoftWrapEnd)
 	return out
 }
 
@@ -120,6 +131,11 @@ func (s *Screen) ClearRegion(rect Rect) {
 	r := ClampRect(rect, Size{Width: s.Width, Height: s.Height})
 	for y := r.Y; y < r.Y+r.Height; y++ {
 		for x := r.X; x < r.X+r.Width; x++ {
+			// Wide graphemes are atomic visual units. Clearing only their head
+			// or tail must clear the partner even when it lies just outside the
+			// requested rectangle, otherwise a skipped spacer can survive as a
+			// ghost cell in later diffs.
+			s.clearWideNeighbors(x, y)
 			s.Cells[s.index(x, y)] = Cell{Char: " "}
 		}
 	}
@@ -134,18 +150,59 @@ func (s *Screen) MarkNoSelect(rect Rect) {
 	}
 }
 
+func (s *Screen) normalizeWideRow(y int) {
+	if s == nil || y < 0 || y >= s.Height {
+		return
+	}
+	for x := 0; x < s.Width; x++ {
+		i := s.index(x, y)
+		c := s.Cells[i]
+		switch c.Width {
+		case CellSpacerTail:
+			if x == 0 || s.Cells[s.index(x-1, y)].Width != CellWide {
+				s.Cells[i] = Cell{Char: " "}
+			}
+		case CellWide:
+			if x+1 >= s.Width {
+				s.Cells[i] = Cell{Char: " "}
+				continue
+			}
+			next := s.index(x+1, y)
+			if s.Cells[next].Width != CellSpacerTail {
+				s.Cells[next] = Cell{Char: "", Width: CellSpacerTail, Style: c.Style, Hyperlink: c.Hyperlink, NoSelect: c.NoSelect}
+			}
+			x++
+		}
+	}
+}
+
 func (s *Screen) Blit(src *Screen, srcRect Rect, dst Point) {
 	if s == nil || src == nil {
 		return
 	}
 	sr := ClampRect(srcRect, Size{Width: src.Width, Height: src.Height})
 	for y := 0; y < sr.Height; y++ {
+		sy, dy := sr.Y+y, dst.Y+y
+		if dy >= 0 && dy < s.Height && sy >= 0 && sy < src.Height {
+			s.SoftWrap[dy] = src.SoftWrap[sy]
+			if sy < len(src.SoftWrapEnd) && dy < len(s.SoftWrapEnd) {
+				end := src.SoftWrapEnd[sy]
+				if end > 0 {
+					end += dst.X - sr.X
+					end = max(0, min(s.Width, end))
+				}
+				s.SoftWrapEnd[dy] = end
+			}
+		}
 		for x := 0; x < sr.Width; x++ {
 			dx, dy := dst.X+x, dst.Y+y
 			if !s.InBounds(dx, dy) {
 				continue
 			}
 			s.Cells[s.index(dx, dy)] = src.Cells[src.index(sr.X+x, sr.Y+y)]
+		}
+		if dy := dst.Y + y; dy >= 0 && dy < s.Height {
+			s.normalizeWideRow(dy)
 		}
 	}
 }
@@ -169,21 +226,29 @@ func (s *Screen) ShiftRows(top, bottom, n int) {
 	if n > 0 {
 		for y := top; y <= bottom-n; y++ {
 			copy(s.Cells[s.index(0, y):s.index(0, y)+s.Width], s.Cells[s.index(0, y+n):s.index(0, y+n)+s.Width])
+			s.SoftWrap[y] = s.SoftWrap[y+n]
+			s.SoftWrapEnd[y] = s.SoftWrapEnd[y+n]
 		}
 		for y := bottom - n + 1; y <= bottom; y++ {
 			for x := 0; x < s.Width; x++ {
 				s.Cells[s.index(x, y)] = Cell{Char: " "}
 			}
+			s.SoftWrap[y] = false
+			s.SoftWrapEnd[y] = 0
 		}
 	} else {
 		n = -n
 		for y := bottom; y >= top+n; y-- {
 			copy(s.Cells[s.index(0, y):s.index(0, y)+s.Width], s.Cells[s.index(0, y-n):s.index(0, y-n)+s.Width])
+			s.SoftWrap[y] = s.SoftWrap[y-n]
+			s.SoftWrapEnd[y] = s.SoftWrapEnd[y-n]
 		}
 		for y := top; y < top+n; y++ {
 			for x := 0; x < s.Width; x++ {
 				s.Cells[s.index(x, y)] = Cell{Char: " "}
 			}
+			s.SoftWrap[y] = false
+			s.SoftWrapEnd[y] = 0
 		}
 	}
 }
