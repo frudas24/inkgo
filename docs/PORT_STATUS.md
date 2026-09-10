@@ -4,7 +4,7 @@
 
 The Go port is approximately **99% functionally equivalent for practical terminal-UI use**. Round 5 deliberately prioritized production behavior, packaging and maintainability over chasing implementation identity with JavaScript/React/Yoga internals.
 
-The project is stdlib-only, CGO-free, importable as `github.com/frudas24/inkgo`, and `v0.1.9` is publicly tagged. Development checkouts may contain additional `Unreleased` hardening.
+The project is stdlib-only, CGO-free, importable as `github.com/frudas24/inkgo`, and `v0.1.10` is publicly tagged. Development checkouts may contain additional `Unreleased` hardening.
 
 ## Closed in Round 5
 
@@ -18,7 +18,7 @@ The project is stdlib-only, CGO-free, importable as `github.com/frudas24/inkgo`,
 - bounded renderer scroll history across repeated root replacement;
 - focus-manager disabled traversal contract bug.
 
-## v0.1.7, v0.1.8 and v0.1.9 hardening (post-v0.1.6)
+## v0.1.7 through v0.1.10 hardening (post-v0.1.6)
 
 `v0.1.7` replaces Windows console-size polling with native `ReadConsoleInputW` ownership inside `Runtime.Run`. Resize now arrives as `WINDOW_BUFFER_SIZE_EVENT`; key/mouse/focus records are preserved through the same input owner, and the blocking pump is stopped by a kernel event rather than a periodic timer.
 
@@ -41,4 +41,4 @@ No vendor should be added merely to erase this percentage. Add complexity only w
 
 ## Release boundary
 
-The latest published tag is `v0.1.9`. New changes should remain under `Unreleased` until the next validated tag is created. Repository description/topics are GitHub metadata and are not part of source archives. See `RELEASE.md`.
+The latest published tag is `v0.1.10`. New changes should remain under `Unreleased` until the next validated tag is created. Repository description/topics are GitHub metadata and are not part of source archives. See `RELEASE.md`.

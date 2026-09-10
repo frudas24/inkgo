@@ -1,6 +1,6 @@
 # Release checklist
 
-The latest published release is **v0.1.9**. This document is the checklist for
+The latest published release is **v0.1.10**. This document is the checklist for
 preparing the **next** release; do not reuse an already-published tag for new
 source changes.
 
@@ -43,18 +43,18 @@ Ubuntu, macOS and Windows, with an additional Linux race campaign.
 ## Tag
 
 After the validated tree is committed to `main`, choose a new immutable semantic
-version (for example `v0.1.10`) and create an annotated tag:
+version (for example `v0.1.11`) and create an annotated tag:
 
 ```bash
-git tag -a v0.1.10 -m "inkgo v0.1.10"
-git push origin v0.1.10
+git tag -a v0.1.11 -m "inkgo v0.1.11"
+git push origin v0.1.11
 ```
 
 Then verify the exact version you published:
 
 ```bash
-go list -m github.com/frudas24/inkgo@v0.1.10
-go get github.com/frudas24/inkgo@v0.1.10
+go list -m github.com/frudas24/inkgo@v0.1.11
+go get github.com/frudas24/inkgo@v0.1.11
 ```
 
 ## Suggested GitHub metadata

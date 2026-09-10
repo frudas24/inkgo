@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.1.10 — PTY CI corrections
+
 - make two PTY assertions platform-aware: ConPTY owns host focus reporting and does not surface the application's `?1004l` on detach, and it tears the console down before a panicking process flushes stderr, so the focus-restore sequence and the panic sentinel are asserted on Unix only; terminal restoration is still asserted everywhere;
 - fix the PTY module completeness guard: `go mod tidy -diff` compares `go.sum` byte for byte, so a Windows checkout with `core.autocrlf=true` reported every line as changed and the step failed on line endings alone; the step now runs `go mod tidy` and lets git compare, which normalises EOL while still detecting real module drift;
 
