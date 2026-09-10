@@ -117,3 +117,10 @@ go test ./internal/inputparser -run='^$' -fuzz=FuzzParserNeverPanics -fuzztime=3
 ```
 
 See `ARCHITECTURE.md` for package boundaries, `MIGRATION.md` for TS/React-to-Go mappings, and `PORT_STATUS.md` for the remaining parity boundary.
+
+## License
+
+MIT — see [`LICENSE`](LICENSE). This library is a native Go port of Ink
+(MIT, Vadim Demedes) via reopencode's customized Ink fork; see
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for the full lineage and
+the outstanding clarification about the fork's undeclared customizations.
