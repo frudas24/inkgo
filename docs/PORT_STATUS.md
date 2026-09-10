@@ -4,7 +4,7 @@
 
 The Go port is approximately **99% functionally equivalent for practical terminal-UI use**. Round 5 deliberately prioritized production behavior, packaging and maintainability over chasing implementation identity with JavaScript/React/Yoga internals.
 
-The project is stdlib-only, CGO-free, importable as `github.com/frudas24/inkgo`, and `v0.1.8` is publicly tagged. Development checkouts may contain additional `Unreleased` hardening.
+The project is stdlib-only, CGO-free, importable as `github.com/frudas24/inkgo`, and `v0.1.9` is publicly tagged. Development checkouts may contain additional `Unreleased` hardening.
 
 ## Closed in Round 5
 
@@ -18,7 +18,7 @@ The project is stdlib-only, CGO-free, importable as `github.com/frudas24/inkgo`,
 - bounded renderer scroll history across repeated root replacement;
 - focus-manager disabled traversal contract bug.
 
-## v0.1.7 and v0.1.8 hardening (post-v0.1.6)
+## v0.1.7, v0.1.8 and v0.1.9 hardening (post-v0.1.6)
 
 `v0.1.7` replaces Windows console-size polling with native `ReadConsoleInputW` ownership inside `Runtime.Run`. Resize now arrives as `WINDOW_BUFFER_SIZE_EVENT`; key/mouse/focus records are preserved through the same input owner, and the blocking pump is stopped by a kernel event rather than a periodic timer.
 
@@ -26,7 +26,7 @@ The project is stdlib-only, CGO-free, importable as `github.com/frudas24/inkgo`,
 
 `v0.1.8` closes Windows combined-modifier/wheel/shutdown-priority bugs and substantially tightens ANSI/Unicode text semantics: output escape scanning is now distinct from input sequence parsing, ANSI controls are atomic during wrap/slice/truncate, SGR/OSC-8 state is safely closed/reopened across boundaries, invalid UTF-8/control grapheme handling is consistent, and text-default emoji/keycap/VS16 widths are covered by regressions. Five permanent fuzz domains now cover input parsing, screen wide-cell invariants, layout/render, text wrapping/slicing/truncation and ANSI parsing. Total statement coverage is above 81% on the validation host, with an 80% CI floor. See `validation/WINDOWS_NATIVE_INPUT.md` and `validation/POST_V0.1.7_DEEP_AUDIT.md`.
 
-Post-v0.1.8 development adds an external-observer PTY/ConPTY suite in the separate `test/pty` module. It closes a narrow Unix startup window: `SIGWINCH` handlers were installed after the initial render, so a resize landing in that gap could stay invisible until unrelated input caused another render. `Runtime.Run` now installs signal handlers before `Start`. The suite's immediate-resize test does not discriminate that reorder on its own — the harness resizes the PTY before the fixture reads its initial geometry, and the test passes with the handlers installed either way (240 repetitions) — so the reorder is defensive hardening rather than a change this suite proves. The suite's value is the lifecycle, input and terminal-restoration coverage it adds from outside the process, with no dependency added to the root module. See `validation/PTY_INTEGRATION.md`.
+`v0.1.9` adds an external-observer PTY/ConPTY suite in the separate `test/pty` module, and fixes a grapheme-segmentation bug the new wrapping fuzz target found: a ZWJ chain was joined without the UAX #29 GB11 pictographic base, so a digit ZWJ run fused into a three-cell cluster that could not be wrapped and produced rows wider than the requested width. It closes a narrow Unix startup window: `SIGWINCH` handlers were installed after the initial render, so a resize landing in that gap could stay invisible until unrelated input caused another render. `Runtime.Run` now installs signal handlers before `Start`. The suite's immediate-resize test does not discriminate that reorder on its own — the harness resizes the PTY before the fixture reads its initial geometry, and the test passes with the handlers installed either way (240 repetitions) — so the reorder is defensive hardening rather than a change this suite proves. The suite's value is the lifecycle, input and terminal-restoration coverage it adds from outside the process, with no dependency added to the root module. See `validation/PTY_INTEGRATION.md`.
 
 ## Deliberately remaining parity boundary
 
@@ -41,4 +41,4 @@ No vendor should be added merely to erase this percentage. Add complexity only w
 
 ## Release boundary
 
-The latest published tag is `v0.1.8`. New changes should remain under `Unreleased` until the next validated tag is created. Repository description/topics are GitHub metadata and are not part of source archives. See `RELEASE.md`.
+The latest published tag is `v0.1.9`. New changes should remain under `Unreleased` until the next validated tag is created. Repository description/topics are GitHub metadata and are not part of source archives. See `RELEASE.md`.
