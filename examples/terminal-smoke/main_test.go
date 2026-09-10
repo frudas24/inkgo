@@ -68,6 +68,32 @@ func TestSmokeTabFocusIsVisible(t *testing.T) {
 	}
 }
 
+func TestSmokeKeyEchoIsVisible(t *testing.T) {
+	rt := newSmokeRuntime(strings.NewReader(""), io.Discard, ink.Size{Width: 80, Height: 24})
+	defer rt.Close()
+	screen := func() string {
+		frame, err := rt.Render()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return frame.Screen.PlainText()
+	}
+	if before := screen(); !strings.Contains(before, "Keys: 0") {
+		t.Fatalf("initial key echo missing:\n%s", before)
+	}
+	rt.HandleInput([]byte("a"))
+	first := screen()
+	if !strings.Contains(first, "Keys: 1") || !strings.Contains(first, `name="a"`) {
+		t.Fatalf("key not echoed:\n%s", first)
+	}
+	// Multi-byte input must count as one key, not one per byte.
+	rt.HandleInput([]byte("á"))
+	second := screen()
+	if !strings.Contains(second, "Keys: 2") || !strings.Contains(second, `text="á"`) {
+		t.Fatalf("unicode key not echoed:\n%s", second)
+	}
+}
+
 func TestSmokePasteFeedback(t *testing.T) {
 	rt := newSmokeRuntime(strings.NewReader(""), io.Discard, ink.Size{Width: 80, Height: 24})
 	defer rt.Close()

@@ -39,6 +39,10 @@ func newSmokeRuntime(in io.Reader, out io.Writer, size ink.Size) *ink.Runtime {
 	footer := ink.Text(fmt.Sprintf("Viewport bottom · %dx%d", size.Width, size.Height))
 	pasted := ink.Text("Paste: waiting for text")
 	focusLabel := ink.Text("Focus: (none)", ink.TextStyle{Bold: true})
+	// Echo every key: without this the demo looks unresponsive to typing even
+	// when the input path works, which has already produced false bug reports.
+	keyCount := 0
+	keys := ink.Text("Keys: 0 (last: none)")
 	// A plain Button tracks focus but renders no indicator, so the demo uses the
 	// render-prop form to make Tab/Shift+Tab traversal observable. Three buttons
 	// are required: with two, Tab and Shift+Tab land on the same node and the
@@ -66,6 +70,7 @@ func newSmokeRuntime(in io.Reader, out io.Writer, size ink.Size) *ink.Runtime {
 			focusButton("button B"),
 			focusButton("button C"),
 			focusLabel,
+			keys,
 			ink.Box(ink.Style{Height: ink.Cells(4), FlexShrink: ink.F(0), Overflow: ink.OverflowHidden}, pasted),
 			ink.Spacer(),
 			footer,
@@ -74,6 +79,9 @@ func newSmokeRuntime(in io.Reader, out io.Writer, size ink.Size) *ink.Runtime {
 	root.SetHandlers(ink.EventHandlers{
 		OnKeyDown: func(e *ink.KeyboardEvent) {
 			key := e.Key
+			keyCount++
+			keys.SetText(fmt.Sprintf("Keys: %d (last: name=%q text=%q seq=%q ctrl=%v alt=%v shift=%v)",
+				keyCount, key.Name, key.Text, key.Sequence, key.Ctrl, key.Alt, key.Shift))
 			if (key.Name == "q" && !key.Ctrl && !key.Alt && !key.Meta) ||
 				(key.Name == "c" && key.Ctrl && !key.Alt && !key.Meta) ||
 				(key.Name == "escape" && !key.Ctrl && !key.Alt && !key.Meta) {
