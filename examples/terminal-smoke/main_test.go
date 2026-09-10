@@ -33,6 +33,33 @@ func TestSmokeExitKeys(t *testing.T) {
 	}
 }
 
+func TestSmokeTabFocusIsVisible(t *testing.T) {
+	rt := newSmokeRuntime(strings.NewReader(""), io.Discard, ink.Size{Width: 80, Height: 24})
+	defer rt.Close()
+	screen := func() string {
+		frame, err := rt.Render()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return frame.Screen.PlainText()
+	}
+	unfocused := screen()
+	rt.HandleInput([]byte("\t"))
+	first := screen()
+	if first == unfocused || !strings.Contains(first, "[ button A ]") {
+		t.Fatalf("Tab did not visibly focus the first button:\n%s", first)
+	}
+	rt.HandleInput([]byte("\t"))
+	second := screen()
+	if second == first || !strings.Contains(second, "[ button B ]") {
+		t.Fatalf("Tab did not visibly move focus to the second button:\n%s", second)
+	}
+	rt.HandleInput([]byte("\x1b[Z"))
+	if back := screen(); back != first {
+		t.Fatalf("Shift+Tab did not return focus to the first button:\n%s", back)
+	}
+}
+
 func TestSmokePasteFeedback(t *testing.T) {
 	rt := newSmokeRuntime(strings.NewReader(""), io.Discard, ink.Size{Width: 80, Height: 24})
 	defer rt.Close()
