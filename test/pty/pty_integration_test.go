@@ -151,7 +151,10 @@ func TestPTYCallbackPanicStillRestoresTerminal(t *testing.T) {
 	if !strings.Contains(out, altScreenExit) {
 		t.Fatalf("panic path did not restore alternate screen; output=%q", out)
 	}
-	if !strings.Contains(out, "intentional PTY fixture panic") {
+	// ConPTY tears the console down before a panicking process flushes stderr,
+	// so the sentinel is only observable on a Unix PTY. Terminal restoration
+	// above is asserted on every platform.
+	if runtime.GOOS != "windows" && !strings.Contains(out, "intentional PTY fixture panic") {
 		t.Fatalf("panic output missing sentinel; output=%q", out)
 	}
 }
@@ -220,15 +223,21 @@ func TestPTYGracefulExitRestoresAllRuntimeModes(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := s.Output()
-	for _, seq := range []string{
+	restored := []string{
 		"\x1b[?2004l", // bracketed paste
-		"\x1b[?1004l", // focus events
 		"\x1b[?1000l", // mouse button tracking
 		"\x1b[?1002l", // mouse drag tracking
 		"\x1b[?1006l", // SGR mouse mode
 		"\x1b[?25h",   // cursor visible
 		altScreenExit,
-	} {
+	}
+	if runtime.GOOS != "windows" {
+		// ConPTY owns host focus reporting: it enables ?1004h itself on attach
+		// and does not surface the application's ?1004l on detach, so that
+		// sequence cannot be observed from outside on this platform.
+		restored = append(restored, "\x1b[?1004l")
+	}
+	for _, seq := range restored {
 		if !strings.Contains(out, seq) {
 			t.Fatalf("exit did not restore %q; output=%q", seq, out)
 		}
