@@ -30,7 +30,7 @@ The source version is `v0.1.4`. The Git tag is the authoritative published versi
 - SGR + X10 mouse, click-on-release, drag suppression, hover and multi-click selection
 - bracketed paste, CSI-u/Kitty keys, xterm `modifyOtherKeys`, legacy navigation/function keys and incomplete-sequence timeouts
 - advanced selection, keyboard extension, no-select regions, scrolled-off row capture and search highlighting
-- terminal focus, suspend/resume, SIGCONT/resize recovery, mode reassertion and extended-key negotiation
+- terminal focus, suspend/resume, SIGCONT/resize recovery (`SIGWINCH` on Unix, console-size polling on Windows), mode reassertion and extended-key negotiation
 - asynchronous terminal queries (`DECRQM`, DA1/DA2, Kitty keyboard, cursor, OSC color, XTVERSION)
 - OSC52, tmux and native clipboard paths (`pbcopy`, `wl-copy`, `xclip`, `xsel`, `clip.exe`)
 - title, bell, notifications, version-gated progress and tab-status sequences

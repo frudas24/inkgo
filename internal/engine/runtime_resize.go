@@ -51,6 +51,30 @@ func (rt *Runtime) probeResize(generation uint64, attempt int) {
 	rt.RefreshSize()
 }
 
+// pollSizeChanges samples the viewport on a fixed interval and reports every
+// change. It exists because Windows consoles have no SIGWINCH equivalent, so
+// the runtime has to discover a resize instead of being told about it.
+func pollSizeChanges(interval time.Duration, stop <-chan struct{}, sample func() (Size, bool), onChange func()) {
+	if interval <= 0 {
+		return
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	last, ok := sample()
+	for {
+		select {
+		case <-stop:
+			return
+		case <-ticker.C:
+			size, valid := sample()
+			if valid && (!ok || size != last) {
+				last, ok = size, true
+				onChange()
+			}
+		}
+	}
+}
+
 // Caller holds eventMu. Invalidate even callbacks whose timer already fired.
 func (rt *Runtime) cancelResizeLocked() {
 	rt.resizeGeneration++
