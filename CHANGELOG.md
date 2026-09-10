@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- fix the PTY module completeness guard: `go mod tidy -diff` compares `go.sum` byte for byte, so a Windows checkout with `core.autocrlf=true` reported every line as changed and the step failed on line endings alone; the step now runs `go mod tidy` and lets git compare, which normalises EOL while still detecting real module drift;
+
 ## v0.1.9 — real PTY/ConPTY integration and ZWJ cluster fix
 
 - stop ZWJ from joining clusters unless UAX #29 GB11 applies, i.e. an Extended_Pictographic base before it; ASCII digits, `#` and `*` are emoji candidates but not pictographic, so a digit ZWJ run fused into a single cluster three cells wide, which exceeded the two-cell model and could not be wrapped, leaving rows wider than the requested width; real emoji ZWJ sequences, including ones with a skin-tone modifier between base and ZWJ, still collapse to one cluster;

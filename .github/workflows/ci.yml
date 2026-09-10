@@ -59,7 +59,13 @@ jobs:
         run: go mod verify
       - name: Verify PTY module files are complete
         working-directory: test/pty
-        run: go mod tidy -diff
+        # `go mod tidy -diff` compares go.sum byte for byte, so a Windows
+        # checkout with core.autocrlf=true reports every line as changed and
+        # the step fails on line endings alone. Rewrite and let git compare
+        # instead: git normalises EOL, so only real module changes show up.
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
       - name: PTY end-to-end suite
         working-directory: test/pty
         env:
