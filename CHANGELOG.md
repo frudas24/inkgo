@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- close the remaining ZWJ width-invariant hole for text-default Extended_Pictographic chains: valid GB11 sequences such as `☀‍☀‍☀`, `♥‍♥‍♥` and `⚠‍⚠‍⚠` remain one grapheme but are capped to the framebuffer's two-cell grapheme model instead of accumulating width 3; add direct regressions and make the fuzz target assert that every emitted grapheme width stays within 0..2;
+- make the PTY harness drain final output after process exit until the reader is quiescent (bounded), so `Wait()` cannot race the read goroutine and falsely report missing alternate-screen/mode restoration under `-race`;
+- add a discriminating Unix regression for the SIGWINCH-before-Start ordering: the test blocks the first terminal write, delivers SIGWINCH in the exact startup window and proves by ablation that the old ordering loses it while the current ordering queues it;
+
 ## v0.1.10 — PTY CI corrections
 
 - make two PTY assertions platform-aware: ConPTY owns host focus reporting and does not surface the application's `?1004l` on detach, and it tears the console down before a panicking process flushes stderr, so the focus-restore sequence and the panic sentinel are asserted on Unix only; terminal restoration is still asserted everywhere;

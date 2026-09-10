@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
+	"time"
 	"unsafe"
 )
 
@@ -182,5 +184,74 @@ func TestCloseCancelsResizeRetries(t *testing.T) {
 	defer rt.eventMu.Unlock()
 	if rt.resizeTimer != nil || rt.resizeQueued || len(rt.pendingEvents) != 0 {
 		t.Fatal("resize work survived Close")
+	}
+}
+
+type blockFirstWrite struct {
+	entered     chan struct{}
+	release     chan struct{}
+	firstOnce   sync.Once
+	releaseOnce sync.Once
+}
+
+func newBlockFirstWrite() *blockFirstWrite {
+	return &blockFirstWrite{entered: make(chan struct{}), release: make(chan struct{})}
+}
+
+func (w *blockFirstWrite) Write(p []byte) (int, error) {
+	first := false
+	w.firstOnce.Do(func() {
+		first = true
+		close(w.entered)
+	})
+	if first {
+		<-w.release
+	}
+	return len(p), nil
+}
+
+func (w *blockFirstWrite) Release() { w.releaseOnce.Do(func() { close(w.release) }) }
+
+func TestRunInstallsResizeHandlerBeforeTerminalEntry(t *testing.T) {
+	// Block the very first terminal write made by Start. A SIGWINCH delivered
+	// here is the exact window that the PTY black-box test cannot discriminate:
+	// with the old Run order the signal handler did not exist yet and the signal
+	// was lost; with the current order queueResize must run while Start is still
+	// blocked in terminal entry.
+	out := newBlockFirstWrite()
+	rt := NewRuntime(Root(Text("startup")), strings.NewReader(""), out, RenderOptions{Width: 20, Height: 4, Fullscreen: true})
+	done := make(chan error, 1)
+	go func() { done <- rt.Run() }()
+	defer func() {
+		rt.Stop()
+		out.Release()
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			t.Errorf("Run did not stop during cleanup")
+		}
+	}()
+
+	select {
+	case <-out.entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Run did not reach terminal entry write")
+	}
+	if err := syscall.Kill(os.Getpid(), syscall.SIGWINCH); err != nil {
+		t.Fatal(err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		rt.eventMu.Lock()
+		queued := rt.resizeQueued || len(rt.pendingEvents) > 0
+		rt.eventMu.Unlock()
+		if queued {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("SIGWINCH was not queued while Start was blocked; signal handler was installed too late")
+		}
+		time.Sleep(time.Millisecond)
 	}
 }

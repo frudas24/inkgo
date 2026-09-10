@@ -93,32 +93,6 @@ func isEmojiCandidateRune(r rune) bool {
 		(r >= 0x1f000 && r <= 0x1faff)
 }
 
-// isExtendedPictographic approximates Unicode's Extended_Pictographic property
-// for the terminal-relevant subset, which UAX #29 GB11 needs to decide whether
-// a ZWJ joins the following rune. Keycap bases (ASCII digits, '#' and '*') are
-// deliberately excluded: they are emoji candidates but never head a ZWJ
-// sequence, and treating them as pictographic fuses digit ZWJ runs into a
-// single cluster wider than the two-cell model can render.
-func isExtendedPictographic(r rune) bool {
-	if isEmojiPresentationRune(r) {
-		return true
-	}
-	switch {
-	case r == 0x00a9 || r == 0x00ae || r == 0x2122,
-		r == 0x203c || r == 0x2049,
-		r == 0x2139,
-		r == 0x3030 || r == 0x303d,
-		r == 0x3297 || r == 0x3299,
-		r == 0x21a9 || r == 0x21aa,
-		r >= 0x2194 && r <= 0x2199,
-		r >= 0x2300 && r <= 0x23ff,
-		r >= 0x25a0 && r <= 0x27bf,
-		r >= 0x2900 && r <= 0x2bff:
-		return true
-	}
-	return false
-}
-
 // isEmojiPresentationRune is the compact terminal-relevant subset of Unicode's
 // Emoji_Presentation property. Text-default symbols such as U+26A0 WARNING SIGN
 // intentionally remain narrow unless VS16 requests emoji presentation.
@@ -215,6 +189,7 @@ func Graphemes(s string) []Grapheme {
 	curWidth := 0
 	joinNext := false
 	riCount := 0
+	lastRegional := false
 	emojiWide := false
 	emojiCandidate := false
 	hasVS16 := false
@@ -228,6 +203,13 @@ func Graphemes(s string) []Grapheme {
 	// Pictographic}; without this, ASCII digits or '#' joined by a ZWJ fuse
 	// into one cluster wider than the two-cell model can render.
 	lastPictographic := false
+	// hasPictographicZWJ records that this cluster contains at least one
+	// successful GB11 join. The screen model can represent a grapheme in at
+	// most two cells, and the TypeScript source treats emoji/ZWJ graphemes as
+	// a single terminal glyph. Text-default pictographs (for example ☀) are
+	// otherwise narrow, so without this marker a chain such as ☀‍☀‍☀ would
+	// accumulate width 3 even though it is one grapheme cluster.
+	hasPictographicZWJ := false
 	flush := func() {
 		if cur.Len() == 0 {
 			return
@@ -245,6 +227,11 @@ func Graphemes(s string) []Grapheme {
 			}
 		case hasVS16 && emojiCandidate && !keycapBase:
 			w = 2
+		case hasPictographicZWJ && w > 0:
+			// UAX #29 GB11 keeps the chain in one grapheme. Keep that
+			// grapheme representable by the terminal screen's two-cell model,
+			// including text-default pictographs without VS16.
+			w = 2
 		case emojiWide && w > 0:
 			w = 2
 		}
@@ -259,6 +246,7 @@ func Graphemes(s string) []Grapheme {
 		curWidth = 0
 		joinNext = false
 		riCount = 0
+		lastRegional = false
 		emojiWide = false
 		emojiCandidate = false
 		hasVS16 = false
@@ -268,6 +256,7 @@ func Graphemes(s string) []Grapheme {
 		firstBase = 0
 		curIsControl = false
 		lastPictographic = false
+		hasPictographicZWJ = false
 	}
 
 	for _, r := range s {
@@ -282,8 +271,14 @@ func Graphemes(s string) []Grapheme {
 		}
 		regional := r >= 0x1f1e6 && r <= 0x1f1ff
 		zwjJoins := joinNext && lastPictographic && isExtendedPictographic(r)
+		if zwjJoins {
+			hasPictographicZWJ = true
+		}
 		if cur.Len() > 0 && !combining && !emojiMod && !zwjJoins {
-			if !(regional && riCount == 1) {
+			// GB12/GB13 pair adjacent regional indicators only. riCount alone
+			// is insufficient because GB9 can attach a ZWJ/Extend after an RI;
+			// that intervening rune breaks the RI sequence before the next RI.
+			if !(regional && lastRegional && riCount == 1) {
 				flush()
 			}
 		}
@@ -329,6 +324,7 @@ func Graphemes(s string) []Grapheme {
 			// the next normal rune will flush before being appended.
 			joinNext = false
 		}
+		lastRegional = regional
 	}
 	flush()
 	return out

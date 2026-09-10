@@ -45,13 +45,14 @@ type Session struct {
 	Pty pty.Pty
 	Cmd *pty.Cmd
 
-	cancel  context.CancelFunc
-	mu      sync.Mutex
-	out     bytes.Buffer
-	wake    chan struct{}
-	readErr error
-	waitCh  chan error
-	closed  sync.Once
+	cancel   context.CancelFunc
+	mu       sync.Mutex
+	out      bytes.Buffer
+	wake     chan struct{}
+	readErr  error
+	waitCh   chan error
+	readDone chan struct{}
+	closed   sync.Once
 }
 
 func Start(t testing.TB, executable string, width, height int, env ...string) *Session {
@@ -73,7 +74,11 @@ func Start(t testing.TB, executable string, width, height int, env ...string) *S
 		_ = p.Close()
 		t.Fatalf("pty command start: %v", err)
 	}
-	s := &Session{t: t, Pty: p, Cmd: cmd, cancel: cancel, wake: make(chan struct{}, 1), waitCh: make(chan error, 1)}
+	s := &Session{
+		t: t, Pty: p, Cmd: cmd, cancel: cancel,
+		wake: make(chan struct{}, 1), waitCh: make(chan error, 1),
+		readDone: make(chan struct{}),
+	}
 	go s.readLoop()
 	go func() { s.waitCh <- cmd.Wait() }()
 	t.Cleanup(func() { s.Close() })
@@ -81,6 +86,7 @@ func Start(t testing.TB, executable string, width, height int, env ...string) *S
 }
 
 func (s *Session) readLoop() {
+	defer close(s.readDone)
 	buf := make([]byte, 16*1024)
 	for {
 		n, err := s.Pty.Read(buf)
@@ -156,11 +162,51 @@ func (s *Session) WaitForTimeout(substr string, timeout time.Duration) string {
 
 func (s *Session) Wait(timeout time.Duration) error {
 	s.t.Helper()
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
 	select {
 	case err := <-s.waitCh:
+		// Process exit and PTY EOF are independent observations. In particular
+		// under the race detector the waiter can win while readLoop still has
+		// the runtime's final restoration sequences buffered. Give the reader a
+		// bounded chance to consume those bytes before callers inspect Output.
+		s.waitForReadDrain()
 		return normalizeWaitError(s.Cmd, err)
-	case <-time.After(timeout):
+	case <-timer.C:
 		return fmt.Errorf("timeout waiting for process exit; output:\n%s", s.Output())
+	}
+}
+
+func (s *Session) waitForReadDrain() {
+	// The PTY master may intentionally stay open after the child exits, so EOF
+	// is not a reliable drain signal on every backend. Instead wait until the
+	// reader has been quiet for a short interval, with a hard cap so a noisy or
+	// unusual ConPTY implementation can never stall the suite.
+	const (
+		quiet    = 20 * time.Millisecond
+		maxDrain = 250 * time.Millisecond
+	)
+	quietTimer := time.NewTimer(quiet)
+	capTimer := time.NewTimer(maxDrain)
+	defer quietTimer.Stop()
+	defer capTimer.Stop()
+	for {
+		select {
+		case <-s.readDone:
+			return
+		case <-s.wake:
+			if !quietTimer.Stop() {
+				select {
+				case <-quietTimer.C:
+				default:
+				}
+			}
+			quietTimer.Reset(quiet)
+		case <-quietTimer.C:
+			return
+		case <-capTimer.C:
+			return
+		}
 	}
 }
 

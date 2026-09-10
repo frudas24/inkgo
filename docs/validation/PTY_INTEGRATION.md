@@ -42,21 +42,24 @@ The fix installs runtime signal handlers before `Start()`. A resize that arrives
 during terminal entry or the first paint is now queued and processed by the UI
 owner.
 
-Caveat, recorded deliberately: `TestPTYImmediateResizeDuringStartupIsNotLost` is
-**not** a regression test for that reorder. The harness resizes the PTY before
-the fixture reads its initial geometry, so the child usually starts with the new
-size and no signal is needed; reverting only the reorder still passes the test
-over 240 repetitions, and `TestPTYResizeIsObservedWithoutKeyboardInput` /
-`TestPTYResizeBurstSettlesAtFinalSize` behave the same. The reorder is defensive
-hardening whose benefit is not discriminated by this suite, and it should not be
-cited as validated by it.
+`TestPTYImmediateResizeDuringStartupIsNotLost` remains useful as a black-box
+startup scenario, but by itself it does **not** discriminate the handler reorder:
+the harness may resize the PTY before the fixture reads its initial geometry. A
+new internal Unix regression, `TestRunInstallsResizeHandlerBeforeTerminalEntry`,
+closes that proof gap. It blocks the first terminal write made by `Start`, sends
+`SIGWINCH` while `Start` is still blocked, and requires resize work to be queued.
+An explicit ablation that restores the old `Start -> install handlers` ordering
+fails this test, while the current ordering passes 100/100 repetitions.
 
 ## Development validation
 
 The optimized harness builds its fixture once per test binary so repetition
-primarily stresses PTY/runtime lifecycle rather than the Go compiler. During the
-implementation campaign the full PTY suite passed `-count=50 -shuffle=on`, and
-the Linux PTY suite passed `-race -count=20 -shuffle=on`.
+primarily stresses PTY/runtime lifecycle rather than the Go compiler. `Session.Wait`
+also waits for a short bounded quiet period after process exit so the asynchronous
+PTY reader can drain terminal-restoration bytes before callers inspect `Output`;
+this removed a race-detector-only false negative without making PTY EOF a required
+backend behavior. During the implementation campaign the full PTY suite passed
+repeated shuffle runs, and the Linux PTY suite passed `-race -count=20 -shuffle=on`.
 
 CI runs the test module on Ubuntu, macOS and Windows at the minimum supported Go
 line, plus a Linux PTY race campaign. The root module's normal dependency-policy

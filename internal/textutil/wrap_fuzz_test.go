@@ -15,6 +15,11 @@ func FuzzWrapTextInvariants(f *testing.F) {
 		"a\tb",
 		"界界界",
 		"👨‍👩‍👧‍👦 hello",
+		"☀\u200d☀\u200d☀",
+		"♥\u200d♥\u200d♥",
+		"🇦\u200d🇧",
+		"🇦\u200d🇧\u200d🇨",
+		"🇦🇧🇨",
 		"\x1b[31mhello world\x1b[0m",
 		"\x1b]8;;https://example.com\x07link text\x1b]8;;\x07",
 		"a\r\nb",
@@ -28,6 +33,12 @@ func FuzzWrapTextInvariants(f *testing.F) {
 		if trim {
 			mode = core.TextWrapTrim
 		}
+		for _, g := range Graphemes(StripANSI(input)) {
+			if g.Width < 0 || g.Width > 2 {
+				t.Fatalf("grapheme width outside screen model: input=%q grapheme=%q width=%d", input, g.Text, g.Width)
+			}
+		}
+
 		got := WrapText(input, width, mode)
 		if !utf8.ValidString(got) {
 			t.Fatalf("wrap returned invalid UTF-8: input=%q output=%q", input, got)

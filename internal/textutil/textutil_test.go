@@ -80,6 +80,48 @@ func TestZWJJoiningRequiresPictographicBase(t *testing.T) {
 		t.Fatalf("digit ZWJ wrap=%q", got)
 	}
 
+	// Text-default pictographs are Extended_Pictographic too. GB11 keeps a
+	// ZWJ chain as one grapheme even without VS16; keep that grapheme within
+	// the screen model's two-cell maximum instead of accumulating one cell per
+	// pictograph (which made wrapping unable to satisfy its width invariant).
+	for _, in := range []string{
+		"☀\u200d☀\u200d☀",
+		"♥\u200d♥\u200d♥",
+		"⚠\u200d⚠\u200d⚠",
+		"©\u200d©\u200d©",
+	} {
+		gs := Graphemes(in)
+		if len(gs) != 1 || gs[0].Width != 2 {
+			t.Fatalf("text-default pictographic ZWJ %q graphemes=%v, want one 2-cell cluster", in, gs)
+		}
+		if got := WrapText(in, 2, core.TextWrapTrim); StringWidth(got) > 2 {
+			t.Fatalf("text-default pictographic ZWJ wrap=%q width=%d, want <=2", got, StringWidth(got))
+		}
+	}
+
+	// Regional indicators are handled by UAX #29 GB12/GB13, not GB11. A ZWJ
+	// therefore must not turn separate RI symbols into an emoji ZWJ sequence.
+	// GB9 still keeps each ZWJ with the preceding RI. Plain RI pairs remain a
+	// single two-cell flag cluster.
+	for _, tc := range []struct {
+		in   string
+		want []Grapheme
+	}{
+		{"🇦\u200d🇧", []Grapheme{{Text: "🇦\u200d", Width: 1}, {Text: "🇧", Width: 1}}},
+		{"🇦\u200d🇧\u200d🇨", []Grapheme{{Text: "🇦\u200d", Width: 1}, {Text: "🇧\u200d", Width: 1}, {Text: "🇨", Width: 1}}},
+		{"🇦🇧", []Grapheme{{Text: "🇦🇧", Width: 2}}},
+	} {
+		gs := Graphemes(tc.in)
+		if len(gs) != len(tc.want) {
+			t.Fatalf("regional-indicator graphemes %q=%v, want %v", tc.in, gs, tc.want)
+		}
+		for i := range gs {
+			if gs[i] != tc.want[i] {
+				t.Fatalf("regional-indicator grapheme %q[%d]=%v, want %v", tc.in, i, gs[i], tc.want[i])
+			}
+		}
+	}
+
 	// Real emoji ZWJ sequences must still collapse to one two-cell cluster.
 	for _, in := range []string{
 		"👨\u200d👩\u200d👧\u200d👦", // family
