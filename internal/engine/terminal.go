@@ -115,21 +115,29 @@ type Runtime struct {
 	TerminalName  string
 	terminalFocus atomic.Int32
 
-	lastInputTime time.Time
-	lastClickTime time.Time
-	lastClick     Point
-	clickCount    int
-	press         mousePressState
-	pendingLink   *time.Timer
+	lastInputTime  time.Time
+	lastClickTime  time.Time
+	lastClick      Point
+	clickCount     int
+	press          mousePressState
+	pendingLink    *time.Timer
+	linkGeneration uint64
 
-	lifecycleMu     sync.Mutex
-	writeMu         sync.Mutex
-	incompleteMu    sync.Mutex
-	incompleteTimer *time.Timer
-	raw             *RawTerminal
-	outputRestore   func() error
-	entered         bool
-	stopped         atomic.Bool
+	lifecycleMu          sync.Mutex
+	writeMu              sync.Mutex
+	incompleteMu         sync.Mutex
+	incompleteTimer      *time.Timer
+	incompleteGeneration uint64
+	eventMu              sync.Mutex
+	events               chan struct{}
+	pendingEvents        []func()
+	eventsClosed         bool
+	stopOnce             sync.Once
+	stopCh               chan struct{}
+	raw                  *RawTerminal
+	outputRestore        func() error
+	entered              bool
+	stopped              atomic.Bool
 }
 
 type runtimeWriter struct{ rt *Runtime }
@@ -151,6 +159,8 @@ func NewRuntime(root *Node, in io.Reader, out io.Writer, opts RenderOptions) *Ru
 	renderer.SetSelection(sel)
 	rt := &Runtime{
 		Root:                 root,
+		events:               make(chan struct{}, 1),
+		stopCh:               make(chan struct{}),
 		Renderer:             renderer,
 		Focus:                fm,
 		Parser:               NewInputParser(),
@@ -172,7 +182,11 @@ func NewRuntime(root *Node, in io.Reader, out io.Writer, opts RenderOptions) *Ru
 	return rt
 }
 
-func (rt *Runtime) Stop()         { rt.stopped.Store(true) }
+// Stop wakes Run and requests termination without closing the caller's input.
+func (rt *Runtime) Stop() {
+	rt.stopped.Store(true)
+	rt.stopOnce.Do(func() { close(rt.stopCh) })
+}
 func (rt *Runtime) Stopped() bool { return rt.stopped.Load() }
 
 // TerminalFocusState returns focused, blurred, or unknown when the terminal
@@ -296,6 +310,50 @@ func (rt *Runtime) RenderSettled() (Frame, error) {
 	return frame, nil
 }
 
+// Events wakes a caller-owned UI loop when timer or signal work is pending.
+// Call ProcessEvents on the same goroutine used for input and node mutation.
+func (rt *Runtime) Events() <-chan struct{} { return rt.events }
+
+func (rt *Runtime) enqueueEvent(event func()) {
+	rt.eventMu.Lock()
+	defer rt.eventMu.Unlock()
+	if rt.eventsClosed {
+		return
+	}
+	rt.pendingEvents = append(rt.pendingEvents, event)
+	select {
+	case rt.events <- struct{}{}:
+	default:
+	}
+}
+
+// ProcessEvents dispatches pending work and renders on the calling goroutine.
+// Run calls it automatically; embedded UI loops must call it after Events wakes.
+func (rt *Runtime) ProcessEvents() error {
+	rt.eventMu.Lock()
+	select {
+	case <-rt.events:
+	default:
+	}
+	pending := rt.pendingEvents
+	rt.pendingEvents = nil
+	rt.eventMu.Unlock()
+	for _, event := range pending {
+		rt.eventMu.Lock()
+		closed := rt.eventsClosed
+		rt.eventMu.Unlock()
+		if closed || rt.Stopped() {
+			break
+		}
+		event()
+	}
+	if len(pending) > 0 && rt.Started() && !rt.Stopped() {
+		_, err := rt.RenderSettled()
+		return err
+	}
+	return nil
+}
+
 func (rt *Runtime) HandleInput(data []byte) []ParsedInput {
 	now := time.Now()
 	rt.lifecycleMu.Lock()
@@ -316,6 +374,7 @@ func (rt *Runtime) HandleInput(data []byte) []ParsedInput {
 
 func (rt *Runtime) cancelIncompleteTimer() {
 	rt.incompleteMu.Lock()
+	rt.incompleteGeneration++
 	if rt.incompleteTimer != nil {
 		rt.incompleteTimer.Stop()
 		rt.incompleteTimer = nil
@@ -335,28 +394,28 @@ func (rt *Runtime) scheduleIncompleteFlush() {
 		return
 	}
 	rt.incompleteMu.Lock()
-	rt.incompleteTimer = time.AfterFunc(d, func() { rt.flushIncompleteInput() })
+	generation := rt.incompleteGeneration
+	rt.incompleteTimer = time.AfterFunc(d, func() {
+		rt.enqueueEvent(func() {
+			rt.incompleteMu.Lock()
+			valid := generation == rt.incompleteGeneration
+			rt.incompleteMu.Unlock()
+			if valid {
+				rt.flushIncompleteInput()
+			}
+		})
+	})
 	rt.incompleteMu.Unlock()
 }
 
 func (rt *Runtime) flushIncompleteInput() []ParsedInput {
-	rt.incompleteMu.Lock()
-	rt.incompleteTimer = nil
-	rt.incompleteMu.Unlock()
 	if rt == nil || rt.Parser == nil {
 		return nil
 	}
+	rt.cancelIncompleteTimer()
 	inputs := rt.Parser.Flush()
 	for _, in := range inputs {
 		rt.dispatch(in)
-	}
-	if len(inputs) > 0 {
-		rt.lifecycleMu.Lock()
-		entered := rt.entered
-		rt.lifecycleMu.Unlock()
-		if entered {
-			_, _ = rt.Render()
-		}
 	}
 	return inputs
 }
@@ -560,6 +619,7 @@ func (rt *Runtime) handleLeftPress(m ParsedMouse, p Point) {
 	if rt.Selection.Dragging {
 		rt.finishSelection()
 	}
+	rt.linkGeneration++
 	if rt.pendingLink != nil {
 		rt.pendingLink.Stop()
 		rt.pendingLink = nil
@@ -626,7 +686,15 @@ func (rt *Runtime) handleLeftRelease(p Point) {
 				if timeout <= 0 {
 					timeout = defaultMultiClickTimeout
 				}
-				rt.pendingLink = time.AfterFunc(timeout, func() { rt.OnHyperlink(url) })
+				generation := rt.linkGeneration
+				timer := time.AfterFunc(timeout, func() {
+					rt.enqueueEvent(func() {
+						if generation == rt.linkGeneration && rt.OnHyperlink != nil {
+							rt.OnHyperlink(url)
+						}
+					})
+				})
+				rt.pendingLink = timer
 			}
 		}
 	}
@@ -902,6 +970,8 @@ func (rt *Runtime) enterTerminal() error {
 			rt.outputRestore = restore
 		}
 	}
+	// Even a partial entry write must be paired with an exit attempt.
+	rt.entered = true
 	if err := rt.WriteRaw(rt.Renderer.EnterSequence(rt.Root)); err != nil {
 		return err
 	}
@@ -910,9 +980,18 @@ func (rt *Runtime) enterTerminal() error {
 }
 
 func (rt *Runtime) leaveTerminal() {
+	rt.eventMu.Lock()
+	rt.eventsClosed = true
+	rt.pendingEvents = nil
+	select {
+	case <-rt.events:
+	default:
+	}
+	rt.eventMu.Unlock()
 	rt.cancelIncompleteTimer()
 	rt.lifecycleMu.Lock()
 	defer rt.lifecycleMu.Unlock()
+	rt.linkGeneration++
 	if rt.pendingLink != nil {
 		rt.pendingLink.Stop()
 		rt.pendingLink = nil
@@ -952,11 +1031,23 @@ func (rt *Runtime) Start() error {
 	if rt == nil || rt.In == nil || rt.Out == nil {
 		return errors.New("runtime requires input and output")
 	}
+	if rt.Started() {
+		return nil
+	}
+	rt.eventMu.Lock()
+	rt.eventsClosed = false
+	rt.eventMu.Unlock()
 	if err := rt.enterTerminal(); err != nil {
+		rt.leaveTerminal()
+		rt.Renderer.Invalidate()
 		return err
 	}
 	rt.ProbeTerminalIdentity()
 	_, err := rt.RenderSettled()
+	if err != nil {
+		rt.leaveTerminal()
+		rt.Renderer.Invalidate()
+	}
 	return err
 }
 
@@ -970,9 +1061,10 @@ func (rt *Runtime) Close() error {
 	return nil
 }
 
-// Run owns terminal modes until EOF/error. Applications with their own event
-// loop can instead call HandleInput + Render and optionally SuspendTerminal /
-// ResumeTerminal around external programs.
+// Run owns terminal modes until Stop, EOF, or error. It dispatches callbacks on
+// its calling goroutine. An outstanding input Read may outlive Run until the
+// caller unblocks its reader; Run never closes caller-owned input.
+// Embedded loops use HandleInput, Render, and Events/ProcessEvents instead.
 func (rt *Runtime) Run() error {
 	if rt.In == nil || rt.Out == nil {
 		return errors.New("runtime requires input and output")
@@ -983,26 +1075,68 @@ func (rt *Runtime) Run() error {
 	defer rt.Close()
 	removeSignals := installRuntimeSignalHandlers(rt)
 	defer removeSignals()
-	buf := make([]byte, 8192)
+	// A generic io.Reader cannot be interrupted. Keep at most one outstanding
+	// read, and never close caller-owned input. If stopped during Read, this
+	// worker exits as soon as that Read completes.
+	type readResult struct {
+		data []byte
+		err  error
+	}
+	reads := make(chan readResult)
+	requests := make(chan struct{})
+	done := make(chan struct{})
+	defer close(done)
+	reader := rt.In
+	go func() {
+		buf := make([]byte, 8192)
+		for {
+			select {
+			case <-done:
+				return
+			case <-requests:
+			}
+			n, err := reader.Read(buf)
+			select {
+			case <-done:
+				return
+			case reads <- readResult{buf[:n], err}:
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+	request := requests
 	for {
-		if rt.stopped.Load() {
+		if rt.Stopped() {
 			return nil
 		}
-		n, err := rt.In.Read(buf)
-		if n > 0 {
-			rt.HandleInput(buf[:n])
-			if rt.stopped.Load() {
-				return nil
+		select {
+		case <-rt.stopCh:
+			return nil
+		case request <- struct{}{}:
+			request = nil
+		case <-rt.Events():
+			if err := rt.ProcessEvents(); err != nil {
+				return err
 			}
-			if _, rerr := rt.RenderSettled(); rerr != nil {
-				return rerr
+		case result := <-reads:
+			if len(result.data) > 0 {
+				rt.HandleInput(result.data)
+				if rt.Stopped() {
+					return nil
+				}
+				if _, err := rt.RenderSettled(); err != nil {
+					return err
+				}
 			}
-		}
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				return nil
+			if result.err != nil {
+				if errors.Is(result.err, io.EOF) {
+					return nil
+				}
+				return result.err
 			}
-			return err
+			request = requests
 		}
 	}
 }

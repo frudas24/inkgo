@@ -94,14 +94,32 @@ if err := rt.Start(); err != nil {
 }
 defer rt.Close()
 
-// In your reactor/select loop:
-rt.HandleInput(chunk)
-// mutate nodes/application state
-_, err := rt.RenderSettled()
-_ = err
+// In your reactor/select loop, on the same UI goroutine:
+var err error
+select {
+case chunk := <-inputChunks: // channel supplied by the embedding application
+    rt.HandleInput(chunk)
+    // mutate nodes/application state
+    _, err = rt.RenderSettled()
+case <-rt.Events():
+    err = rt.ProcessEvents() // timeout callbacks and redraw
+}
+if err != nil {
+    panic(err)
+}
 ```
 
 `Runtime.Run()` is the convenience blocking loop and uses the same lifecycle.
+It dispatches input, timer callbacks, and terminal signals on its UI goroutine.
+Embedded loops must service `Events()` with `ProcessEvents()` to deliver Escape,
+partial-paste, and delayed hyperlink callbacks. Failed starts restore terminal
+state before returning and can be retried.
+
+`Stop()` wakes `Run()` even while input is blocked, without closing caller-owned
+input. A generic `io.Reader` cannot cancel an outstanding read: the input worker
+may remain blocked until that read returns, and may consume that next chunk.
+Close or otherwise unblock the source before reusing it elsewhere; applications
+that need full control over input cancellation should own the input loop.
 
 ## Renderer ownership
 

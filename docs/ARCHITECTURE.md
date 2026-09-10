@@ -79,10 +79,25 @@ On a stable large vertical scroll layout, the engine certifies directly ordered/
 
 `Runtime` can own the loop with `Run()` or participate in a caller-owned loop through `Start`, `HandleInput`, `RenderSettled`, and `Close`.
 
+`Run` reads input through a worker and dispatches UI work on its owning goroutine.
+Timers and Unix signal handlers enqueue work instead of invoking application
+callbacks or mutating nodes from background goroutines. An embedded loop must
+select on `Runtime.Events()` and call `Runtime.ProcessEvents()` from the same UI
+goroutine as `HandleInput`, rendering, and application state changes. This also
+applies to delayed hyperlink callbacks. Canceled timeout events are ignored.
+
+`Stop` wakes the runtime's select loop without closing caller-owned input. For a
+generic `io.Reader`, an outstanding read cannot be canceled: its worker remains
+until that read returns, potentially consuming one final chunk. The worker issues
+no further reads after shutdown. Embedders needing control over cancellation or
+input handoff should own the input loop, or unblock their source before reuse.
+A failed `Start` restores acquired terminal state and invalidates render history
+so a subsequent start emits a complete frame.
+
 Concurrent subsystems protect their own mutable state where appropriate:
 
 - terminal writes share one serialization gate, including async query traffic;
-- input parser and incomplete-sequence timers synchronize parser state;
+- the input parser synchronizes parser state; timers only enqueue UI work;
 - terminal query bookkeeping is synchronized;
 - renderer physical-screen history is synchronized;
 - lifecycle transitions are synchronized/idempotent;
