@@ -130,11 +130,12 @@ func (s *Screen) SetCell(x, y int, value string, width int, style TextStyle, hyp
 	if s == nil || !s.InBounds(x, y) || width <= 0 {
 		return
 	}
+	// Reject an unpaintable glyph before touching an existing wide pair.
+	if width >= 2 && x+1 >= s.Width {
+		return
+	}
 	s.clearWideNeighbors(x, y)
 	if width >= 2 {
-		if x+1 >= s.Width {
-			return
-		}
 		s.clearWideNeighbors(x+1, y)
 		s.Cells[s.index(x, y)] = Cell{Char: value, Width: CellWide, Style: style, Hyperlink: hyperlink}
 		s.Cells[s.index(x+1, y)] = Cell{Char: "", Width: CellSpacerTail, Style: style, Hyperlink: hyperlink}

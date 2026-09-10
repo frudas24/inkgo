@@ -17,12 +17,12 @@ func TruncateText(text string, columns int, position core.TextWrap) string {
 	if columns < 1 {
 		return ""
 	}
-	if columns == 1 {
-		return Ellipsis
-	}
 	length := StringWidth(text)
 	if length <= columns {
 		return text
+	}
+	if columns == 1 {
+		return Ellipsis
 	}
 	switch position {
 	case core.TextWrapTruncateStart:

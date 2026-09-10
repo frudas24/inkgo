@@ -217,45 +217,49 @@ func TestRendererBorrowedScreenReusesDoubleBuffer(t *testing.T) {
 	}
 }
 
+func assertScreenWideCells(t *testing.T, s *Screen) {
+	t.Helper()
+	for y := 0; y < s.Height; y++ {
+		for x := 0; x < s.Width; x++ {
+			c, _ := s.CellAt(x, y)
+			switch c.Width {
+			case CellWide:
+				tail, ok := s.CellAt(x+1, y)
+				if !ok || tail.Width != CellSpacerTail {
+					t.Fatalf("wide head missing tail at (%d,%d)", x, y)
+				}
+			case CellSpacerTail:
+				head, ok := s.CellAt(x-1, y)
+				if !ok || head.Width != CellWide {
+					t.Fatalf("orphan spacer tail at (%d,%d)", x, y)
+				}
+			}
+		}
+	}
+}
+
 func FuzzScreenWideCellInvariants(f *testing.F) {
 	f.Add([]byte{0, 1, 2, 3, 4, 5})
 	f.Add([]byte{7, 255, 8, 128, 9, 64})
+	f.Add([]byte{1, 10, 0, 1, 11, 0})
 	f.Fuzz(func(t *testing.T, data []byte) {
 		const width, height = 12, 4
 		s := NewScreen(width, height)
-		for i, b := range data {
-			x := int(b) % width
-			y := (i / width) % height
-			if b&1 != 0 {
+		// Independent operation/column/row bytes reach wide glyphs at even columns.
+		// The previous b%width + b&1 encoding could never create those states.
+		for i := 0; i+2 < len(data); i += 3 {
+			op := data[i]
+			x := int(data[i+1]) % width
+			y := int(data[i+2]) % height
+			if op&1 != 0 {
 				s.SetCell(x, y, "界", 2, TextStyle{}, "")
 			} else {
-				s.SetCell(x, y, string(rune('a'+b%26)), 1, TextStyle{}, "")
+				s.SetCell(x, y, string(rune('a'+op%26)), 1, TextStyle{}, "")
 			}
-			if b&0x20 != 0 {
+			assertScreenWideCells(t, s)
+			if op&0x20 != 0 {
 				s.ClearRegion(Rect{X: max(0, x-1), Y: y, Width: 2, Height: 1})
-			}
-		}
-		for y := 0; y < height; y++ {
-			for x := 0; x < width; x++ {
-				c, _ := s.CellAt(x, y)
-				switch c.Width {
-				case CellWide:
-					if x+1 >= width {
-						t.Fatalf("wide head at last column (%d,%d)", x, y)
-					}
-					n, _ := s.CellAt(x+1, y)
-					if n.Width != CellSpacerTail {
-						t.Fatalf("wide head missing spacer tail at (%d,%d): next=%+v", x, y, n)
-					}
-				case CellSpacerTail:
-					if x == 0 {
-						t.Fatalf("orphan spacer tail at row %d", y)
-					}
-					p, _ := s.CellAt(x-1, y)
-					if p.Width != CellWide {
-						t.Fatalf("orphan spacer tail at (%d,%d): prev=%+v", x, y, p)
-					}
-				}
+				assertScreenWideCells(t, s)
 			}
 		}
 	})

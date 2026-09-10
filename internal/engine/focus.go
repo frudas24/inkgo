@@ -27,6 +27,20 @@ func (f *FocusManager) Focus(node *Node) bool {
 	if !f.enabled || node == nil || node.TabIndex < -1 || node.Style.Display == DisplayNone {
 		return false
 	}
+	// Programmatic focus follows the same visibility/tree boundary as Tab.
+	belongs := false
+	for ancestor := node; ancestor != nil; ancestor = ancestor.Parent {
+		if ancestor.Style.Display == DisplayNone {
+			return false
+		}
+		if ancestor == f.root {
+			belongs = true
+			break
+		}
+	}
+	if !belongs {
+		return false
+	}
 	if f.focused == node {
 		return true
 	}
@@ -153,16 +167,19 @@ func (f *FocusManager) AutoFocus() *Node {
 		return nil
 	}
 	f.root.Walk(func(n *Node) bool {
+		if found != nil || n.Style.Display == DisplayNone {
+			return false
+		}
 		if n.AutoFocus && n.TabIndex >= -1 {
 			found = n
 			return false
 		}
 		return true
 	})
-	if found != nil {
-		f.Focus(found)
+	if found != nil && f.Focus(found) {
+		return found
 	}
-	return found
+	return nil
 }
 
 func dispatchFocusEvent(target *Node, e *FocusEvent, focused bool) {

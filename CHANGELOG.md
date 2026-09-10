@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- reject a wide-cell write at the right edge before mutating the existing glyph, preventing orphan spacer tails;
+- preserve fitting text (including empty strings, combining marks and ANSI-styled text) when truncating to one column;
+- reject programmatic focus outside the managed tree or under hidden ancestors; autofocus selects the first visible eligible node;
+- make wide-cell fuzz operations independent of their coordinates and validate invariants immediately after each mutation, covering previously unreachable even-column wide glyphs.
+
 ## v0.1.12 — exact GB11, keycap and variation-selector sequences
 
 - make emoji presentation selectors sequence-aware instead of treating `Emoji` as a proxy for a registered variation sequence: add the exact Unicode Emoji 17.0 set of 371 variation bases (183 compact ranges), require FE0E/FE0F to be adjacent to such a base, and preserve the base/default width for displaced or unsupported selectors such as `©\u0301\uFE0F`, `⌚\u0301\uFE0E` and `😀\uFE0E`;
