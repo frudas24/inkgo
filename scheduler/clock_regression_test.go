@@ -97,6 +97,10 @@ func TestNowUsesTickTimestampOnlyDuringCallbacks(t *testing.T) {
 	if observed[0] != observed[1] || observed[0] != observed[2] {
 		t.Fatalf("inconsistent callback times: %v", observed)
 	}
+	// Sleep past the clock resolution: on Windows the elapsed time since start
+	// can still be zero right after the tick, which would make a frozen Now()
+	// indistinguishable from a live one.
+	time.Sleep(5 * time.Millisecond)
 	if now := c.Now(); now <= observed[0] {
 		t.Fatalf("Now remained frozen between ticks: %v <= %v", now, observed[0])
 	}
