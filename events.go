@@ -1,6 +1,10 @@
 package inkgo
 
-import "time"
+import (
+	"time"
+
+	core "github.com/frudas24/inkgo/internal/core"
+)
 
 // Event is the common terminal event base. It follows the DOM-ish semantics
 // used by the TypeScript fork: preventDefault and stopImmediatePropagation.
@@ -18,19 +22,7 @@ func (e *Event) DefaultPrevented() bool    { return e.defaultPrevented }
 func (e *Event) StopImmediatePropagation() { e.stopped = true }
 func (e *Event) PropagationStopped() bool  { return e.stopped }
 
-type Key struct {
-	Name     string
-	Text     string
-	Sequence string
-	Ctrl     bool
-	Alt      bool
-	Shift    bool
-	Meta     bool
-	Super    bool
-	Hyper    bool
-	Release  bool
-	Repeat   bool
-}
+type Key = core.Key
 
 type KeyboardEvent struct {
 	Event

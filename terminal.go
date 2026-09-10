@@ -916,6 +916,42 @@ func (rt *Runtime) leaveTerminal() {
 	rt.entered = false
 }
 
+// Started reports whether the runtime currently owns terminal modes.
+func (rt *Runtime) Started() bool {
+	if rt == nil {
+		return false
+	}
+	rt.lifecycleMu.Lock()
+	defer rt.lifecycleMu.Unlock()
+	return rt.entered
+}
+
+// Start enters terminal modes and performs the initial settled render without
+// taking ownership of the caller's input loop. This is the preferred entry
+// point for embedding in an application that already has a reactor/select
+// loop. Calls are idempotent while started.
+func (rt *Runtime) Start() error {
+	if rt == nil || rt.In == nil || rt.Out == nil {
+		return errors.New("runtime requires input and output")
+	}
+	if err := rt.enterTerminal(); err != nil {
+		return err
+	}
+	rt.ProbeTerminalIdentity()
+	_, err := rt.RenderSettled()
+	return err
+}
+
+// Close restores host terminal state and releases runtime-owned timers/query
+// waiters. It is idempotent and is the counterpart to Start for embedded use.
+func (rt *Runtime) Close() error {
+	if rt == nil {
+		return nil
+	}
+	rt.leaveTerminal()
+	return nil
+}
+
 // Run owns terminal modes until EOF/error. Applications with their own event
 // loop can instead call HandleInput + Render and optionally SuspendTerminal /
 // ResumeTerminal around external programs.
@@ -923,16 +959,12 @@ func (rt *Runtime) Run() error {
 	if rt.In == nil || rt.Out == nil {
 		return errors.New("runtime requires input and output")
 	}
-	if err := rt.enterTerminal(); err != nil {
+	if err := rt.Start(); err != nil {
 		return err
 	}
-	defer rt.leaveTerminal()
+	defer rt.Close()
 	removeSignals := installRuntimeSignalHandlers(rt)
 	defer removeSignals()
-	rt.ProbeTerminalIdentity()
-	if _, err := rt.RenderSettled(); err != nil {
-		return err
-	}
 	buf := make([]byte, 8192)
 	for {
 		if rt.stopped.Load() {
@@ -955,4 +987,55 @@ func (rt *Runtime) Run() error {
 			return err
 		}
 	}
+}
+
+// SetTerminalTitle writes an ANSI-stripped OSC 0 title sequence through the
+// runtime's raw-output channel. It is the imperative Go equivalent of
+// useTerminalTitle.
+func (rt *Runtime) SetTerminalTitle(title string) error {
+	return rt.WriteRaw(TerminalTitle(title))
+}
+
+// RingBell emits BEL directly. It is intentionally not wrapped for tmux so
+// tmux's bell-action remains functional.
+func (rt *Runtime) RingBell() error { return rt.WriteRaw(Bell()) }
+
+// NotifyITerm2 emits an iTerm2 notification.
+func (rt *Runtime) NotifyITerm2(message, title string) error {
+	return rt.WriteRaw(NotifyITerm2(message, title))
+}
+
+// NotifyGhostty emits a Ghostty notification.
+func (rt *Runtime) NotifyGhostty(message, title string) error {
+	return rt.WriteRaw(NotifyGhostty(message, title))
+}
+
+// NotifyKitty emits a Kitty notification with a caller-owned notification id.
+func (rt *Runtime) NotifyKitty(message, title string, id int) error {
+	return rt.WriteRaw(NotifyKitty(message, title, id))
+}
+
+// SetProgress emits OSC 9;4 when the current terminal is known to support it.
+// Passing nil clears progress. Unsupported terminals are a successful no-op.
+func (rt *Runtime) SetProgress(state *ProgressState, percentage int) error {
+	if rt == nil || !SupportsProgressReporting() {
+		return nil
+	}
+	if state == nil {
+		return rt.WriteRaw(ProgressSequence(ProgressCompleted, 0))
+	}
+	return rt.WriteRaw(ProgressSequence(*state, percentage))
+}
+
+// SetTabStatus emits or clears the fork's OSC 21337 status indicator. Passing
+// nil clears an existing status. Unsupported/user-gated environments are a
+// successful no-op.
+func (rt *Runtime) SetTabStatus(kind *TabStatusKind) error {
+	if rt == nil || !SupportsTabStatus() {
+		return nil
+	}
+	if kind == nil {
+		return rt.WriteRaw(ClearTabStatus())
+	}
+	return rt.WriteRaw(TabStatus(*kind))
 }

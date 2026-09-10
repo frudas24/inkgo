@@ -1,6 +1,7 @@
 package inkgo
 
 import (
+	core "github.com/frudas24/inkgo/internal/core"
 	"io"
 	"strings"
 	"sync"
@@ -547,7 +548,7 @@ func paintBox(screen *Screen, n *Node, r, clip Rect) {
 	if n.Style.BackgroundColor.Kind != ColorUnset || n.Style.Opaque {
 		// Fill inside the border (padding included), matching the fork. Opaque
 		// uses terminal-default spaces; backgroundColor uses styled spaces.
-		b := n.Style.borderEdges()
+		b := core.BorderEdges(n.Style)
 		inner := Rect{X: r.X + b.Left, Y: r.Y + b.Top, Width: max(0, r.Width-b.Left-b.Right), Height: max(0, r.Height-b.Top-b.Bottom)}.Intersect(clip)
 		st := TextStyle{}
 		if n.Style.BackgroundColor.Kind != ColorUnset {
@@ -560,14 +561,14 @@ func paintBox(screen *Screen, n *Node, r, clip Rect) {
 	if n.Style.BorderStyle == nil {
 		return
 	}
-	b := n.Style.borderEdges()
+	b := core.BorderEdges(n.Style)
 	chars := n.Style.BorderStyle.Chars
 	base := TextStyle{Color: n.Style.BorderColor}
 	if n.Style.BorderDimColor != nil {
 		base.Dim = *n.Style.BorderDimColor
 	}
 	set := func(x, y int, ch string, st TextStyle) {
-		if ch != "" && clip.Contains(Point{x, y}) {
+		if ch != "" && clip.Contains(Point{X: x, Y: y}) {
 			screen.SetCell(x, y, ch, max(1, StringWidth(ch)), st, "")
 		}
 	}
@@ -649,7 +650,7 @@ func paintBorderText(screen *Screen, n *Node, r, clip Rect, style TextStyle) {
 		x = r.X + r.Width - 1 - tw - bt.Offset
 	}
 	for _, g := range Graphemes(txt) {
-		if clip.Contains(Point{x, y}) {
+		if clip.Contains(Point{X: x, Y: y}) {
 			screen.SetCell(x, y, g.Text, g.Width, style, "")
 		}
 		x += g.Width
@@ -675,7 +676,7 @@ func paintText(screen *Screen, n *Node, r, clip Rect, style TextStyle, href stri
 		graphemes := Graphemes(line)
 		graphemes = ReorderBidiGraphemes(graphemes)
 		for _, g := range graphemes {
-			if g.Width > 0 && x+g.Width <= r.X+r.Width && clip.Contains(Point{x, y}) {
+			if g.Width > 0 && x+g.Width <= r.X+r.Width && clip.Contains(Point{X: x, Y: y}) {
 				screen.SetCell(x, y, g.Text, g.Width, style, href)
 			}
 			x += g.Width
@@ -722,7 +723,7 @@ func paintANSILines(screen *Screen, text string, r, clip Rect, base TextStyle, b
 		if gh == "" {
 			gh = baseHref
 		}
-		if g.Width > 0 && clip.Contains(Point{x, y}) {
+		if g.Width > 0 && clip.Contains(Point{X: x, Y: y}) {
 			screen.SetCell(x, y, g.Value, g.Width, g.Style, gh)
 		}
 		x += g.Width

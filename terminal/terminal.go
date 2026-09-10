@@ -9,6 +9,7 @@ import (
 )
 
 type (
+	Capabilities  = tui.Capabilities
 	Terminal      = tui.Terminal
 	RawTerminal   = tui.RawTerminal
 	Runtime       = tui.Runtime
@@ -56,8 +57,11 @@ var (
 	CursorPosition      = tui.QueryCursorPosition
 	OSCColor            = tui.QueryOSCColor
 	XTVERSION           = tui.QueryXTVERSION
+	DetectCapabilities  = tui.DetectCapabilities
 	SupportsHyperlinks  = tui.SupportsHyperlinks
 	SupportsSyncOutput  = tui.SupportsSynchronizedOutput
+	SupportsProgress    = tui.SupportsProgressReporting
+	SupportsTabStatus   = tui.SupportsTabStatus
 	SupportsExtendedKey = tui.SupportsExtendedKeys
 	SetClipboard        = tui.SetClipboard
 	GetClipboardPath    = tui.GetClipboardPath

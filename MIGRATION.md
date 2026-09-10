@@ -28,10 +28,12 @@ Do not translate React application code literally. Keep long-lived Go node refer
 | `useAnimationFrame` | `Clock.Every(interval, true, callback)` + `Runtime.IsVisible` |
 | `useInterval` | `Clock.Every(interval, false, callback)` |
 | terminal raw writer context | `Runtime.WriteRaw(...)` |
+| caller-owned lifecycle | `Runtime.Start()` / `Runtime.Close()` |
 | clear terminal | `Runtime.ClearTerminal()` / `terminal.ClearSequence()` |
-| terminal title | `Runtime.WriteRaw(TerminalTitle(...))` |
-| notifications | `NotifyITerm2`, `NotifyKitty`, `NotifyGhostty`, `Bell` |
-| progress | `ProgressSequence(...)` |
+| terminal title | `Runtime.SetTerminalTitle(...)` |
+| notifications | `Runtime.NotifyITerm2/NotifyKitty/NotifyGhostty`, `Runtime.RingBell` |
+| progress | `Runtime.SetProgress(...)` / `SupportsProgressReporting()` |
+| tab status | `Runtime.SetTabStatus(...)` / `SupportsTabStatus()` |
 | clipboard | `Runtime.CopySelection` / `SetClipboard` |
 
 ## Style conversion

@@ -9,7 +9,7 @@ The port preserves the behavior useful to reopencode while using Go-native owner
 - `Box`, `Text`, `RawANSI`, `Link`, `Button`, `ScrollBox`, `Spacer`, `Newline`, `NoSelect`, `AlternateScreen`, `ErrorOverview`
 - row/column/reverse flex layout, wrap, grow/shrink, percentages, min/max, gaps, margin/padding, borders, absolute positioning and overflow
 - ScrollBox sticky/follow behavior, anchors/clamps, smooth pending-wheel drain, xterm.js adaptive drain and fullscreen hardware scroll
-- Unicode cell measurement, combining marks, wide glyphs, emoji/ZWJ clusters, tab stops and software bidi fallback
+- Unicode cell measurement, combining marks, wide glyphs, emoji/ZWJ clusters, tab stops and contextual mixed RTL/numeric software bidi fallback
 - SGR/16/256/RGB ANSI, OSC-8 hyperlinks and raw styled ANSI
 - cell `Screen`, wide-cell spacer correctness, damage bounds and incremental patching
 - safe relative updates on the main screen; absolute diff plus `DECSTBM + SU/SD` in alternate screen
@@ -22,7 +22,7 @@ The port preserves the behavior useful to reopencode while using Go-native owner
 - terminal focus state, suspend/resume, SIGCONT/resize recovery, mode reassertion and extended-key negotiation
 - asynchronous terminal queries with DA1 barrier (`DECRQM`, DA1/DA2, Kitty keyboard, cursor, OSC color, XTVERSION)
 - OSC52, tmux and native clipboard paths (`pbcopy`, `wl-copy`, `xclip`, `xsel`, `clip.exe`)
-- title, bell, notifications, progress and tab-status control sequences
+- title, bell, notifications, version-gated progress and tab-status control sequences
 - shared `scheduler.Clock` for synchronized/visibility-aware application animations
 - raw/VT terminal support for Linux, macOS and Windows
 
@@ -87,7 +87,21 @@ if err := rt.Run(); err != nil {
 }
 ```
 
-For an existing application event loop, use `HandleInput` plus `Render` or `RenderSettled`; you do not have to give the library ownership of the process loop.
+For an existing application event loop, use the explicit lifecycle:
+
+```go
+if err := rt.Start(); err != nil {
+    panic(err)
+}
+defer rt.Close()
+
+// inside your own reactor/select loop:
+rt.HandleInput(chunk)
+// mutate application/node state
+_, err := rt.RenderSettled()
+```
+
+You do not have to give the library ownership of the process loop.
 
 ## Examples and development
 
@@ -99,6 +113,7 @@ gofmt -w .
 go vet ./...
 go test ./...
 go test -race ./...
+go test ./internal/inputparser -run='^$' -fuzz=FuzzParserNeverPanics -fuzztime=3s
 ```
 
 See `ARCHITECTURE.md` for package boundaries, `MIGRATION.md` for TS/React-to-Go mappings, and `PORT_STATUS.md` for the remaining parity boundary.

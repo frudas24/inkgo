@@ -2,6 +2,7 @@ package inkgo
 
 import (
 	"fmt"
+	core "github.com/frudas24/inkgo/internal/core"
 	"sync/atomic"
 	"time"
 )
@@ -97,7 +98,7 @@ func nextNodeID() string {
 }
 
 func newNode(kind NodeKind, style Style) *Node {
-	style.defaults()
+	core.ApplyDefaults(&style)
 	return &Node{
 		ID:       nextNodeID(),
 		Kind:     kind,
@@ -317,7 +318,7 @@ func (n *Node) SetText(text string) {
 }
 
 func (n *Node) SetStyle(style Style) {
-	style.defaults()
+	core.ApplyDefaults(&style)
 	n.Style = style
 	n.MarkDirty()
 }

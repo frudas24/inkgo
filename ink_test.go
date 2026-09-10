@@ -105,7 +105,7 @@ func TestSearchSelectionNoSelect(t *testing.T) {
 	if !c.Style.Inverse || !c.Style.Bold || !c.Style.Underline {
 		t.Fatalf("current match style = %+v", c.Style)
 	}
-	selected := (Selection{Anchor: Point{0, 0}, Focus: Point{19, 0}}).Text(s)
+	selected := (Selection{Anchor: Point{X: 0, Y: 0}, Focus: Point{X: 19, Y: 0}}).Text(s)
 	if strings.Contains(selected, ">") {
 		t.Fatalf("noSelect leaked into selection: %q", selected)
 	}
@@ -157,7 +157,7 @@ func TestTabsBackgroundAndSoftWrapSelection(t *testing.T) {
 	if len(wrapped.SoftWrap) < 2 || !wrapped.SoftWrap[1] {
 		t.Fatalf("soft wrap bitmap = %#v", wrapped.SoftWrap)
 	}
-	sel := Selection{Anchor: Point{0, 0}, Focus: Point{3, 1}}
+	sel := Selection{Anchor: Point{X: 0, Y: 0}, Focus: Point{X: 3, Y: 1}}
 	if got := sel.Text(wrapped); got != "abcdefgh" {
 		t.Fatalf("soft-wrapped selection inserted newline: %q", got)
 	}

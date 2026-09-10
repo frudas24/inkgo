@@ -3,35 +3,40 @@
 // not byte or rune counts.
 package text
 
-import tui "github.com/frudas24/inkgo"
+import (
+	tui "github.com/frudas24/inkgo"
+	core "github.com/frudas24/inkgo/internal/core"
+	textutil "github.com/frudas24/inkgo/internal/textutil"
+)
 
 type (
-	WrapMode       = tui.TextWrap
-	Size           = tui.Size
-	TextStyle      = tui.TextStyle
+	WrapMode       = core.TextWrap
+	Size           = core.Size
+	TextStyle      = core.TextStyle
+	Grapheme       = textutil.Grapheme
 	StyledGrapheme = tui.StyledGrapheme
-	Grapheme       = tui.Grapheme
 )
 
 const (
-	Wrap           = tui.TextWrapWrap
-	Truncate       = tui.TextWrapTruncate
-	TruncateStart  = tui.TextWrapTruncateStart
-	TruncateMiddle = tui.TextWrapTruncateMiddle
-	TruncateEnd    = tui.TextWrapTruncateEnd
+	Wrap           = core.TextWrapWrap
+	Truncate       = core.TextWrapTruncate
+	TruncateStart  = core.TextWrapTruncateStart
+	TruncateMiddle = core.TextWrapTruncateMiddle
+	TruncateEnd    = core.TextWrapTruncateEnd
 )
 
 var (
-	RuneWidth         = tui.RuneWidth
-	StringWidth       = tui.StringWidth
-	WidestLine        = tui.WidestLine
-	SliceByWidth      = tui.SliceByWidth
-	Graphemes         = tui.Graphemes
-	ExpandTabs        = tui.ExpandTabs
-	StripANSI         = tui.StripANSI
-	WrapText          = tui.WrapText
-	WrapTextLines     = tui.WrapTextLines
-	Measure           = tui.MeasureText
+	RuneWidth     = textutil.RuneWidth
+	StringWidth   = textutil.StringWidth
+	WidestLine    = textutil.WidestLine
+	SliceByWidth  = textutil.SliceByWidth
+	Graphemes     = textutil.Graphemes
+	ExpandTabs    = textutil.ExpandTabs
+	StripANSI     = textutil.StripANSI
+	WrapText      = textutil.WrapText
+	WrapTextLines = textutil.WrapTextLines
+	Measure       = textutil.MeasureText
+
 	ParseANSI         = tui.ParseANSI
 	HasRTLCharacters  = tui.HasRTLCharacters
 	ReorderBidi       = tui.ReorderBidiGraphemes

@@ -1,6 +1,7 @@
 package inkgo
 
 import (
+	core "github.com/frudas24/inkgo/internal/core"
 	"math"
 	"sort"
 	"strings"
@@ -49,9 +50,9 @@ func measureNode(n *Node, availW, availH int) measured {
 		return measured{}
 	}
 	s := n.Style
-	s.defaults()
-	pad := s.paddingEdges()
-	border := s.borderEdges()
+	core.ApplyDefaults(&s)
+	pad := core.PaddingEdges(s)
+	border := core.BorderEdges(s)
 	extraW := pad.Left + pad.Right + border.Left + border.Right
 	extraH := pad.Top + pad.Bottom + border.Top + border.Bottom
 
@@ -100,14 +101,14 @@ func measureNode(n *Node, availW, availH int) measured {
 	if dir == "" {
 		dir = Row
 	}
-	gap := s.gapMain(dir)
+	gap := core.GapMain(s, dir)
 	contentW, contentH := 0, 0
 	if len(flow) > 0 {
 		switch dir {
 		case Row, RowReverse:
 			for i, c := range flow {
 				cm := measureNode(c, innerAvailW, innerAvailH)
-				m := c.Style.marginEdges()
+				m := core.MarginEdges(c.Style)
 				if i > 0 {
 					contentW += gap
 				}
@@ -117,7 +118,7 @@ func measureNode(n *Node, availW, availH int) measured {
 		default:
 			for i, c := range flow {
 				cm := measureNode(c, innerAvailW, innerAvailH)
-				m := c.Style.marginEdges()
+				m := core.MarginEdges(c.Style)
 				if i > 0 {
 					contentH += gap
 				}
@@ -178,7 +179,7 @@ type flexLine struct {
 }
 
 func measureItem(n *Node, dir FlexDirection, mainAvail, crossAvail int) *flexItem {
-	m := n.Style.marginEdges()
+	m := core.MarginEdges(n.Style)
 	var availW, availH int
 	if dir == Row || dir == RowReverse {
 		availW, availH = mainAvail, crossAvail
@@ -354,7 +355,7 @@ func layoutNode(ctx *layoutCtx, n *Node, assigned Rect, forceW, forceH bool) {
 		return
 	}
 	s := n.Style
-	s.defaults()
+	core.ApplyDefaults(&s)
 	n.Style = s
 	if s.Display == DisplayNone {
 		n.Rect = Rect{}
@@ -381,8 +382,8 @@ func layoutNode(ctx *layoutCtx, n *Node, assigned Rect, forceW, forceH bool) {
 	h = applyMinMax(h, s.MinHeight, s.MaxHeight, assigned.Height)
 
 	n.Rect = Rect{X: assigned.X, Y: assigned.Y, Width: max(0, w), Height: max(0, h)}
-	border := s.borderEdges()
-	pad := s.paddingEdges()
+	border := core.BorderEdges(s)
+	pad := core.PaddingEdges(s)
 	insets := AddEdges(border, pad)
 	content := Rect{
 		X:      n.Rect.X + insets.Left,
@@ -417,8 +418,8 @@ func layoutNode(ctx *layoutCtx, n *Node, assigned Rect, forceW, forceH bool) {
 	if dir == Column || dir == ColumnReverse {
 		mainAvail, crossAvail = content.Height, content.Width
 	}
-	gapMain := max(0, s.gapMain(dir))
-	gapCross := max(0, s.gapCross(dir))
+	gapMain := max(0, core.GapMain(s, dir))
+	gapCross := max(0, core.GapCross(s, dir))
 
 	items := make([]*flexItem, 0, len(flow))
 	for _, c := range flow {

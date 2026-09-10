@@ -1,83 +1,87 @@
-// Package layout exposes the layout/style domain without terminal runtime concerns.
+// Package layout exposes style, geometry and flex layout without terminal runtime concerns.
 package layout
 
-import tui "github.com/frudas24/inkgo"
+import (
+	tui "github.com/frudas24/inkgo"
+	core "github.com/frudas24/inkgo/internal/core"
+)
 
 type (
-	Point         = tui.Point
-	Size          = tui.Size
-	Rect          = tui.Rect
-	Edges         = tui.Edges
-	Length        = tui.Length
-	LengthUnit    = tui.LengthUnit
-	FlexDirection = tui.FlexDirection
-	FlexWrap      = tui.FlexWrap
-	Align         = tui.Align
-	Justify       = tui.Justify
-	Position      = tui.Position
-	Overflow      = tui.Overflow
-	Display       = tui.Display
-	Style         = tui.Style
-	BorderStyle   = tui.BorderStyle
-	BorderChars   = tui.BorderChars
-	BorderText    = tui.BorderText
+	Point         = core.Point
+	Size          = core.Size
+	Rect          = core.Rect
+	Edges         = core.Edges
+	Length        = core.Length
+	LengthUnit    = core.LengthUnit
+	FlexDirection = core.FlexDirection
+	FlexWrap      = core.FlexWrap
+	Align         = core.Align
+	Justify       = core.Justify
+	Position      = core.Position
+	Overflow      = core.Overflow
+	Display       = core.Display
+	Style         = core.Style
+	BorderStyle   = core.BorderStyle
+	BorderChars   = core.BorderChars
+	BorderText    = core.BorderText
 	Node          = tui.Node
 )
 
 const (
-	LengthUnset   = tui.LengthUnset
-	LengthCells   = tui.LengthCells
-	LengthPercent = tui.LengthPercent
-	LengthAuto    = tui.LengthAuto
+	LengthUnset   = core.LengthUnset
+	LengthCells   = core.LengthCells
+	LengthPercent = core.LengthPercent
+	LengthAuto    = core.LengthAuto
 
-	Row           = tui.Row
-	RowReverse    = tui.RowReverse
-	Column        = tui.Column
-	ColumnReverse = tui.ColumnReverse
+	Row           = core.Row
+	RowReverse    = core.RowReverse
+	Column        = core.Column
+	ColumnReverse = core.ColumnReverse
 
-	NoWrap      = tui.NoWrap
-	Wrap        = tui.Wrap
-	WrapReverse = tui.WrapReverse
+	NoWrap      = core.NoWrap
+	Wrap        = core.Wrap
+	WrapReverse = core.WrapReverse
 
-	AlignAuto      = tui.AlignAuto
-	AlignStretch   = tui.AlignStretch
-	AlignFlexStart = tui.AlignFlexStart
-	AlignCenter    = tui.AlignCenter
-	AlignFlexEnd   = tui.AlignFlexEnd
+	AlignAuto      = core.AlignAuto
+	AlignStretch   = core.AlignStretch
+	AlignFlexStart = core.AlignFlexStart
+	AlignCenter    = core.AlignCenter
+	AlignFlexEnd   = core.AlignFlexEnd
 
-	JustifyFlexStart    = tui.JustifyFlexStart
-	JustifyCenter       = tui.JustifyCenter
-	JustifyFlexEnd      = tui.JustifyFlexEnd
-	JustifySpaceBetween = tui.JustifySpaceBetween
-	JustifySpaceAround  = tui.JustifySpaceAround
-	JustifySpaceEvenly  = tui.JustifySpaceEvenly
+	JustifyFlexStart    = core.JustifyFlexStart
+	JustifyCenter       = core.JustifyCenter
+	JustifyFlexEnd      = core.JustifyFlexEnd
+	JustifySpaceBetween = core.JustifySpaceBetween
+	JustifySpaceAround  = core.JustifySpaceAround
+	JustifySpaceEvenly  = core.JustifySpaceEvenly
 
-	PositionRelative = tui.PositionRelative
-	PositionAbsolute = tui.PositionAbsolute
+	PositionRelative = core.PositionRelative
+	PositionAbsolute = core.PositionAbsolute
 
-	OverflowVisible = tui.OverflowVisible
-	OverflowHidden  = tui.OverflowHidden
-	OverflowScroll  = tui.OverflowScroll
+	OverflowVisible = core.OverflowVisible
+	OverflowHidden  = core.OverflowHidden
+	OverflowScroll  = core.OverflowScroll
 
-	DisplayFlex = tui.DisplayFlex
-	DisplayNone = tui.DisplayNone
+	DisplayFlex = core.DisplayFlex
+	DisplayNone = core.DisplayNone
 )
 
 var (
-	Cells        = tui.Cells
-	Percent      = tui.Percent
-	Auto         = tui.Auto
-	ParseLength  = tui.ParseLength
-	EdgeAll      = tui.EdgeAll
-	EdgeXY       = tui.EdgeXY
-	AddEdges     = tui.AddEdges
-	UnionRect    = tui.UnionRect
-	ClampRect    = tui.ClampRect
-	Compute      = tui.ComputeLayout
-	Natural      = tui.LayoutNatural
-	SortedRects  = tui.SortedRects
-	BorderByName = tui.BorderByName
-	I            = tui.I
-	F            = tui.F
-	B            = tui.B
+	Cells        = core.Cells
+	Percent      = core.Percent
+	Auto         = core.Auto
+	ParseLength  = core.ParseLength
+	EdgeAll      = core.EdgeAll
+	EdgeXY       = core.EdgeXY
+	AddEdges     = core.AddEdges
+	UnionRect    = core.UnionRect
+	ClampRect    = core.ClampRect
+	BorderByName = core.BorderByName
+	I            = core.I
+	F            = core.F
+	B            = core.B
+
+	Compute     = tui.ComputeLayout
+	Natural     = tui.LayoutNatural
+	SortedRects = tui.SortedRects
 )

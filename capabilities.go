@@ -9,43 +9,111 @@ import (
 	"strings"
 )
 
-func SupportsHyperlinks() bool {
-	p := os.Getenv("TERM_PROGRAM")
-	lc := os.Getenv("LC_TERMINAL")
-	term := os.Getenv("TERM")
-	known := map[string]bool{"ghostty": true, "Hyper": true, "kitty": true, "alacritty": true, "iTerm.app": true, "iTerm2": true, "WezTerm": true, "WarpTerminal": true}
-	return known[p] || known[lc] || strings.Contains(term, "kitty") || os.Getenv("WT_SESSION") != ""
+// Capabilities is an immutable snapshot of terminal behavior relevant to the
+// renderer/runtime. Keeping detection centralized prevents different domains
+// from making contradictory decisions from the same environment.
+type Capabilities struct {
+	Hyperlinks              bool
+	SynchronizedOutput      bool
+	ExtendedKeys            bool
+	SoftwareBidi            bool
+	CursorUpViewportYankBug bool
+	ProgressReporting       bool
+	XtermJS                 bool
+	TerminalName            string
 }
 
-func SupportsSynchronizedOutput() bool {
-	if os.Getenv("TMUX") != "" {
+// DetectCapabilities snapshots capabilities from the current process
+// environment. terminalName may be an XTVERSION response; pass "" before the
+// asynchronous identity probe completes.
+func DetectCapabilities(terminalName string) Capabilities {
+	isTTY := false
+	if fi, err := os.Stdout.Stat(); err == nil {
+		isTTY = fi.Mode()&os.ModeCharDevice != 0
+	}
+	return detectCapabilities(os.Getenv, runtime.GOOS, isTTY, terminalName)
+}
+
+func detectCapabilities(getenv func(string) string, goos string, isTTY bool, terminalName string) Capabilities {
+	p := getenv("TERM_PROGRAM")
+	lc := getenv("LC_TERMINAL")
+	term := getenv("TERM")
+	wt := getenv("WT_SESSION") != ""
+	tmux := getenv("TMUX") != ""
+
+	knownLinks := map[string]bool{"ghostty": true, "Hyper": true, "kitty": true, "alacritty": true, "iTerm.app": true, "iTerm2": true, "WezTerm": true, "WarpTerminal": true}
+	hyperlinks := knownLinks[p] || knownLinks[lc] || strings.Contains(term, "kitty") || wt
+
+	syncOutput := false
+	if !tmux {
+		knownSync := map[string]bool{"iTerm.app": true, "WezTerm": true, "WarpTerminal": true, "ghostty": true, "contour": true, "vscode": true, "alacritty": true}
+		syncOutput = knownSync[p] || strings.Contains(term, "kitty") || term == "xterm-ghostty" || strings.HasPrefix(term, "foot") || strings.Contains(term, "alacritty") || getenv("KITTY_WINDOW_ID") != "" || getenv("ZED_TERM") != "" || wt
+		if !syncOutput {
+			if n, _ := strconv.Atoi(getenv("VTE_VERSION")); n >= 6800 {
+				syncOutput = true
+			}
+		}
+	}
+
+	extended := tmux || p == "iTerm.app" || p == "WezTerm" || p == "ghostty" || p == "kitty" || strings.Contains(term, "kitty") || wt
+	xtermJS := p == "vscode" || strings.HasPrefix(terminalName, "xterm.js")
+	softwareBidi := goos == "windows" || wt || p == "vscode" || strings.HasPrefix(terminalName, "xterm.js")
+	yankBug := goos == "windows" || wt
+
+	progress := false
+	if isTTY && !wt {
+		conemu := getenv("ConEmuANSI") != "" || getenv("ConEmuPID") != "" || getenv("ConEmuTask") != ""
+		switch {
+		case conemu:
+			progress = true
+		case p == "ghostty" && semverAtLeast(getenv("TERM_PROGRAM_VERSION"), 1, 2, 0):
+			progress = true
+		case p == "iTerm.app" && semverAtLeast(getenv("TERM_PROGRAM_VERSION"), 3, 6, 6):
+			progress = true
+		}
+	}
+
+	return Capabilities{
+		Hyperlinks: hyperlinks, SynchronizedOutput: syncOutput, ExtendedKeys: extended,
+		SoftwareBidi: softwareBidi, CursorUpViewportYankBug: yankBug,
+		ProgressReporting: progress, XtermJS: xtermJS, TerminalName: terminalName,
+	}
+}
+
+func semverAtLeast(v string, wantMajor, wantMinor, wantPatch int) bool {
+	v = strings.TrimSpace(strings.TrimPrefix(v, "v"))
+	if v == "" {
 		return false
 	}
-	p, term := os.Getenv("TERM_PROGRAM"), os.Getenv("TERM")
-	known := map[string]bool{"iTerm.app": true, "WezTerm": true, "WarpTerminal": true, "ghostty": true, "contour": true, "vscode": true, "alacritty": true}
-	if known[p] || strings.Contains(term, "kitty") || term == "xterm-ghostty" || strings.HasPrefix(term, "foot") || strings.Contains(term, "alacritty") || os.Getenv("KITTY_WINDOW_ID") != "" || os.Getenv("ZED_TERM") != "" || os.Getenv("WT_SESSION") != "" {
-		return true
+	parts := strings.FieldsFunc(v, func(r rune) bool { return r == '.' || r == '-' || r == '+' })
+	got := [3]int{}
+	for i := 0; i < len(parts) && i < 3; i++ {
+		n, err := strconv.Atoi(parts[i])
+		if err != nil {
+			return false
+		}
+		got[i] = n
 	}
-	if n, _ := strconv.Atoi(os.Getenv("VTE_VERSION")); n >= 6800 {
-		return true
+	want := [3]int{wantMajor, wantMinor, wantPatch}
+	for i := range got {
+		if got[i] != want[i] {
+			return got[i] > want[i]
+		}
 	}
-	return false
+	return true
 }
 
-func SupportsExtendedKeys() bool {
-	if os.Getenv("TMUX") != "" {
-		return true
-	}
-	p := os.Getenv("TERM_PROGRAM")
-	term := os.Getenv("TERM")
-	return p == "iTerm.app" || p == "WezTerm" || p == "ghostty" || p == "kitty" || strings.Contains(term, "kitty") || os.Getenv("WT_SESSION") != ""
-}
-func HasCursorUpViewportYankBug() bool {
-	return runtime.GOOS == "windows" || os.Getenv("WT_SESSION") != ""
-}
-func NeedsSoftwareBidi() bool {
-	return runtime.GOOS == "windows" || os.Getenv("WT_SESSION") != "" || os.Getenv("TERM_PROGRAM") == "vscode"
-}
+// SupportsProgressReporting mirrors the source fork's OSC 9;4 capability
+// check, including Windows Terminal exclusion and version gates.
+func SupportsProgressReporting() bool { return DetectCapabilities("").ProgressReporting }
+
+func SupportsHyperlinks() bool { return DetectCapabilities("").Hyperlinks }
+
+func SupportsSynchronizedOutput() bool { return DetectCapabilities("").SynchronizedOutput }
+
+func SupportsExtendedKeys() bool       { return DetectCapabilities("").ExtendedKeys }
+func HasCursorUpViewportYankBug() bool { return DetectCapabilities("").CursorUpViewportYankBug }
+func NeedsSoftwareBidi() bool          { return DetectCapabilities("").SoftwareBidi }
 
 func WrapForMultiplexer(seq string) string {
 	if os.Getenv("TMUX") != "" {
@@ -144,3 +212,8 @@ func escapeTabStatus(s string) string {
 	s = strings.ReplaceAll(s, "\\", "\\\\")
 	return strings.ReplaceAll(s, ";", "\\;")
 }
+
+// SupportsTabStatus mirrors the fork's temporary feature gate for OSC 21337.
+// The protocol is safe for unknown terminals, but the source only enables it
+// for Ant users while the extension remains unstable.
+func SupportsTabStatus() bool { return os.Getenv("USER_TYPE") == "ant" }
