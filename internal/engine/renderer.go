@@ -322,27 +322,24 @@ func (r *Renderer) reconcileSelectionScroll(root *Node) {
 	if r.selection == nil || !r.selection.HasSelection() || r.prev == nil || root == nil {
 		return
 	}
-	root.Walk(func(n *Node) bool {
-		if n.Style.OverflowY != OverflowScroll && n.Style.Overflow != OverflowScroll {
-			return true
-		}
+	for _, n := range layoutScrollNodes(root) {
 		old, exists := r.scrollTops[n.ID]
 		if !exists || old == n.ScrollTop {
-			return true
+			continue
 		}
 		delta := n.ScrollTop - old
 		vr := visualContentRect(n)
 		if vr.Height <= 0 {
-			return true
+			continue
 		}
 		start, end, ok := r.selection.Bounds()
 		if !ok || end.Y < vr.Y || start.Y >= vr.Y+vr.Height {
-			return true
+			continue
 		}
 		top := max(0, vr.Y)
 		bottom := min(r.prev.Height-1, vr.Y+vr.Height-1)
 		if top > bottom {
-			return true
+			continue
 		}
 		if delta > 0 {
 			leaving := min(delta, bottom-top+1)
@@ -358,8 +355,7 @@ func (r *Renderer) reconcileSelectionScroll(root *Node) {
 		} else {
 			r.selection.Shift(-delta, top, bottom, r.prev.Width)
 		}
-		return true
-	})
+	}
 }
 
 func (r *Renderer) captureScrollTops(root *Node) {

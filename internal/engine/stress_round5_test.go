@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"io"
 	"testing"
 )
 
@@ -98,6 +99,49 @@ func TestRendererForgetsDetachedScrollNodes(t *testing.T) {
 		}
 		if _, ok := r.scrollTops[scroll.ID]; !ok {
 			t.Fatalf("current scroll node missing at iteration %d", i)
+		}
+	}
+}
+
+func BenchmarkRuntimeNativeScroll10KWarm(b *testing.B) {
+	root, scroll := largeScrollTree(10_000)
+	rt := NewRuntime(root, nil, io.Discard, RenderOptions{
+		Width:             80,
+		Height:            24,
+		Fullscreen:        true,
+		BorrowFrameScreen: true,
+	})
+	if _, err := rt.Render(); err != nil {
+		b.Fatal(err)
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		scroll.ScrollBy(1)
+		if _, err := rt.Render(); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkRuntimeXtermScroll10KWarm(b *testing.B) {
+	root, scroll := largeScrollTree(10_000)
+	rt := NewRuntime(root, nil, io.Discard, RenderOptions{
+		Width:             80,
+		Height:            24,
+		Fullscreen:        true,
+		BorrowFrameScreen: true,
+	})
+	rt.TerminalName = "xterm.js"
+	if _, err := rt.Render(); err != nil {
+		b.Fatal(err)
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		scroll.ScrollBy(1)
+		if _, err := rt.Render(); err != nil {
+			b.Fatal(err)
 		}
 	}
 }

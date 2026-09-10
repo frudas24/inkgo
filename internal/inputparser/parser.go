@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -226,7 +227,7 @@ func keycodeName(cp int) string {
 	case 57415:
 		return "="
 	}
-	if cp >= 32 && cp <= 126 {
+	if cp >= 32 && cp <= 0x10ffff && utf8.ValidRune(rune(cp)) && unicode.IsPrint(rune(cp)) {
 		return strings.ToLower(string(rune(cp)))
 	}
 	return ""
@@ -283,7 +284,21 @@ func parseKeySequence(s string) Key {
 		shift := s == "\x1b[Z"
 		return Key{Name: name, Sequence: s, Shift: shift}
 	}
-	// xterm CSI 1;modifier A/B/C/D/H/F
+	// xterm CSI code;modifier~ for Insert/Delete/Page/F5-F12.
+	if strings.HasPrefix(s, "\x1b[") && strings.HasSuffix(s, "~") {
+		body := strings.TrimSuffix(strings.TrimPrefix(s, "\x1b["), "~")
+		parts := strings.Split(body, ";")
+		if len(parts) == 2 {
+			code, _ := strconv.Atoi(parts[0])
+			mod, _ := strconv.Atoi(parts[1])
+			names := map[int]string{2: "insert", 3: "delete", 5: "pageup", 6: "pagedown", 15: "f5", 17: "f6", 18: "f7", 19: "f8", 20: "f9", 21: "f10", 23: "f11", 24: "f12"}
+			if name := names[code]; name != "" {
+				f := decodeModifier(mod)
+				return Key{Name: name, Sequence: s, Ctrl: f.Ctrl, Alt: f.Alt, Meta: f.Alt, Shift: f.Shift, Super: f.Super}
+			}
+		}
+	}
+	// xterm CSI 1;modifier A/B/C/D/H/F/P/Q/R/S.
 	if strings.HasPrefix(s, "\x1b[") && len(s) > 3 {
 		final := s[len(s)-1]
 		body := s[2 : len(s)-1]
@@ -291,7 +306,7 @@ func parseKeySequence(s string) Key {
 		if len(parts) >= 2 {
 			mod, _ := strconv.Atoi(parts[len(parts)-1])
 			f := decodeModifier(mod)
-			names := map[byte]string{'A': "up", 'B': "down", 'C': "right", 'D': "left", 'H': "home", 'F': "end"}
+			names := map[byte]string{'A': "up", 'B': "down", 'C': "right", 'D': "left", 'H': "home", 'F': "end", 'P': "f1", 'Q': "f2", 'R': "f3", 'S': "f4"}
 			if name := names[final]; name != "" {
 				return Key{Name: name, Sequence: s, Ctrl: f.Ctrl, Alt: f.Alt, Meta: f.Alt, Shift: f.Shift, Super: f.Super}
 			}

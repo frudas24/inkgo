@@ -143,6 +143,11 @@ type Runtime struct {
 	stopped              atomic.Bool
 }
 
+type runtimeReadResult struct {
+	data []byte
+	err  error
+}
+
 type runtimeWriter struct{ rt *Runtime }
 
 func (w runtimeWriter) Write(p []byte) (int, error) {
@@ -285,12 +290,12 @@ func (rt *Runtime) configureScrollPolicy() {
 	if rt == nil || rt.Root == nil || !rt.IsXtermJS() {
 		return
 	}
-	rt.Root.Walk(func(n *Node) bool {
-		if n.Style.OverflowY == OverflowScroll || n.Style.Overflow == OverflowScroll {
-			n.ScrollAdaptive = true
-		}
-		return true
-	})
+	// Reuse the layout-owned scroll-node index on stable trees. When layout is
+	// dirty, layoutScrollNodes deliberately falls back to discovery, preserving
+	// correctness without paying a full-tree walk on every hot render.
+	for _, n := range layoutScrollNodes(rt.Root) {
+		n.ScrollAdaptive = true
+	}
 }
 
 // RenderSettled renders one frame and then drains any outstanding ScrollBox
@@ -881,17 +886,11 @@ func nearestScrollBox(n *Node) *Node {
 }
 
 func firstScrollBox(root *Node) *Node {
-	var out *Node
-	if root != nil {
-		root.Walk(func(n *Node) bool {
-			if n.Style.OverflowY == OverflowScroll || n.Style.Overflow == OverflowScroll {
-				out = n
-				return false
-			}
-			return true
-		})
+	nodes := layoutScrollNodes(root)
+	if len(nodes) == 0 {
+		return nil
 	}
-	return out
+	return nodes[0]
 }
 
 // ReassertTerminalModes restores idempotent terminal modes after a long stdin
@@ -1098,37 +1097,36 @@ func (rt *Runtime) Run() error {
 	defer rt.Close()
 	removeSignals := installRuntimeSignalHandlers(rt)
 	defer removeSignals()
-	// A generic io.Reader cannot be interrupted. Keep at most one outstanding
-	// read, and never close caller-owned input. If stopped during Read, this
-	// worker exits as soon as that Read completes.
-	type readResult struct {
-		data []byte
-		err  error
-	}
-	reads := make(chan readResult)
+	// Keep at most one outstanding read. On a real Windows console, the native
+	// ReadConsoleInputW pump owns the INPUT_RECORD stream so resize events cannot
+	// race or compete with key reads. Pipes/PTYs and all non-Windows platforms
+	// retain the generic io.Reader path. Neither path closes caller-owned input.
+	reads := make(chan runtimeReadResult)
 	requests := make(chan struct{})
 	done := make(chan struct{})
 	defer close(done)
-	reader := rt.In
-	go func() {
-		buf := make([]byte, 8192)
-		for {
-			select {
-			case <-done:
-				return
-			case <-requests:
+	if !startNativeConsoleInputPump(rt, reads, requests, done) {
+		reader := rt.In
+		go func() {
+			buf := make([]byte, 8192)
+			for {
+				select {
+				case <-done:
+					return
+				case <-requests:
+				}
+				n, err := reader.Read(buf)
+				select {
+				case <-done:
+					return
+				case reads <- runtimeReadResult{buf[:n], err}:
+				}
+				if err != nil {
+					return
+				}
 			}
-			n, err := reader.Read(buf)
-			select {
-			case <-done:
-				return
-			case reads <- readResult{buf[:n], err}:
-			}
-			if err != nil {
-				return
-			}
-		}
-	}()
+		}()
+	}
 	request := requests
 	for {
 		if rt.Stopped() {

@@ -133,3 +133,35 @@ func TestFlushIncompleteUTF8AndPaste(t *testing.T) {
 		t.Fatalf("flush utf8=%+v", got)
 	}
 }
+
+func TestModifiedLegacySpecialKeys(t *testing.T) {
+	cases := []struct {
+		seq   string
+		name  string
+		ctrl  bool
+		alt   bool
+		shift bool
+	}{
+		{"\x1b[3;5~", "delete", true, false, false},
+		{"\x1b[5;3~", "pageup", false, true, false},
+		{"\x1b[15;2~", "f5", false, false, true},
+		{"\x1b[1;6P", "f1", true, false, true},
+	}
+	for _, tc := range cases {
+		out := NewInputParser().Feed([]byte(tc.seq))
+		if len(out) != 1 || out[0].Kind != InputKey {
+			t.Fatalf("%q => %#v", tc.seq, out)
+		}
+		k := out[0].Key
+		if k.Name != tc.name || k.Ctrl != tc.ctrl || k.Alt != tc.alt || k.Shift != tc.shift {
+			t.Fatalf("%q => %#v", tc.seq, k)
+		}
+	}
+}
+
+func TestCSIUUnicodePrintableKey(t *testing.T) {
+	out := NewInputParser().Feed([]byte("\x1b[233;2u"))
+	if len(out) != 1 || out[0].Key.Name != "é" || out[0].Key.Text != "é" || !out[0].Key.Shift {
+		t.Fatalf("unicode CSI-u = %#v", out)
+	}
+}

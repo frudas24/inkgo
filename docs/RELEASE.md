@@ -1,8 +1,16 @@
 # Release checklist
 
-The current source version is **v0.1.6**. For a new release, update `VERSION`, `version.go`, and the version references below before tagging. Publishing the remote Git tag is a repository action and is intentionally separate from building the source ZIP.
+The latest published release is **v0.1.6**. This document is the checklist for
+preparing the **next** release; do not reuse an already-published tag for new
+source changes.
 
-## Before tagging
+## Choose the next version
+
+Before tagging, update `VERSION`, `version.go`, the README install example when
+appropriate, `docs/STABILITY.md`, and promote the relevant `CHANGELOG.md`
+`Unreleased` entries under the new version heading.
+
+## Validate before tagging
 
 ```bash
 gofmt -w .
@@ -11,7 +19,7 @@ git diff --exit-code -- api.go
 go test ./...
 go vet ./...
 go test -race ./...
-./scripts/check-coverage.sh 74.0 coverage.out
+./scripts/check-coverage.sh 77.0 coverage.out
 ./scripts/check-no-external-deps.sh
 ./scripts/check-version.sh
 # Include new source files in the commit; the manifest also lists non-ignored
@@ -22,22 +30,28 @@ git status --short
 go run ./examples/terminal-smoke
 ```
 
-Run the final interactive smoke on at least one real Windows Terminal/PowerShell console. Linux/macOS real-terminal smoke is also recommended.
+Run the final interactive smoke on at least one real Windows Terminal/PowerShell
+console. Linux/macOS real-terminal smoke is also recommended.
+
+CI tests the minimum supported Go line (`1.23.x`) and the current stable Go
+release across Ubuntu, macOS and Windows. Race, coverage and fuzz-smoke use the
+current stable Go toolchain; policy checks remain on the minimum supported line.
 
 ## Tag
 
-After the validated tree is committed to `main`:
+After the validated tree is committed to `main`, choose a new immutable semantic
+version (for example `v0.1.7`) and create an annotated tag:
 
 ```bash
-git tag -a v0.1.6 -m "inkgo v0.1.6"
-git push origin v0.1.6
+git tag -a v0.1.7 -m "inkgo v0.1.7"
+git push origin v0.1.7
 ```
 
-Then verify:
+Then verify the exact version you published:
 
 ```bash
-go list -m github.com/frudas24/inkgo@v0.1.6
-go get github.com/frudas24/inkgo@v0.1.6
+go list -m github.com/frudas24/inkgo@v0.1.7
+go get github.com/frudas24/inkgo@v0.1.7
 ```
 
 ## Suggested GitHub metadata
@@ -54,4 +68,9 @@ Stars are a community metric, not a release-readiness requirement.
 
 ## License / provenance
 
-The supplied TypeScript source archive did not contain a license file. Before publishing a public `v0.1.6` tag, verify the licensing/provenance obligations of the upstream/customized Ink source and add the appropriate license/attribution. This source tree intentionally does not invent a license on the author's behalf.
+The repository now carries an MIT `LICENSE` and `THIRD_PARTY_NOTICES.md` for the
+known upstream Ink-derived portions. The customized Ink reference fork used for
+behavioral parity still lacks an explicit license declaration for its own
+modifications. Keep that outstanding clarification visible unless written
+permission or a compatible license declaration for those customizations is
+available; do not infer or invent one.

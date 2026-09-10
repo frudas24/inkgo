@@ -1,6 +1,6 @@
 # API stability
 
-The source tree is at version `v0.1.6`.
+The latest published tag is `v0.1.6`. A development checkout may contain additional changes recorded under `Unreleased`.
 
 ## Public surface
 

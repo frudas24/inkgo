@@ -113,7 +113,7 @@ Per-node text/wrap/ANSI caches retain only the latest key/value, rather than glo
 
 ## Terminal portability
 
-Linux and macOS use native termios/ioctl paths. Windows uses console mode APIs to enable raw input and virtual-terminal processing. All are CGO-free.
+Linux and macOS use native termios/ioctl paths. Windows uses console mode APIs plus an exclusive `ReadConsoleInputW` pump in `Runtime.Run`: `KEY_EVENT`, `MOUSE_EVENT`, `FOCUS_EVENT` and `WINDOW_BUFFER_SIZE_EVENT` share one owner, and the pump blocks on console input plus a stop event through `WaitForMultipleObjects`. This removes periodic resize polling and prevents a resize watcher from racing key reads. All paths are CGO-free.
 
 CI executes ordinary tests/builds on Linux, macOS, and Windows. A real raw-console interaction cannot be fully proven by redirected CI streams, so `examples/terminal-smoke` exists as the release/manual check on actual terminal hosts.
 

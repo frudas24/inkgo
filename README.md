@@ -12,7 +12,7 @@ Requires **Go 1.23+**.
 go get github.com/frudas24/inkgo@v0.1.6
 ```
 
-The source version is `v0.1.6`. The Git tag is the authoritative published version; until that tag is published, consumers of a development checkout can use a local `replace` directive or the repository branch they intentionally pin.
+The latest published release is `v0.1.6`. Development checkouts may contain entries under `Unreleased`; consumers that need reproducible builds should pin a published tag or an explicit commit.
 
 **External Go dependencies: zero.** `go list -m all` contains only `github.com/frudas24/inkgo`.
 
@@ -30,7 +30,7 @@ The source version is `v0.1.6`. The Git tag is the authoritative published versi
 - SGR + X10 mouse, click-on-release, drag suppression, hover and multi-click selection
 - bracketed paste, CSI-u/Kitty keys, xterm `modifyOtherKeys`, legacy navigation/function keys and incomplete-sequence timeouts
 - advanced selection, keyboard extension, no-select regions, scrolled-off row capture and search highlighting
-- terminal focus, suspend/resume, SIGCONT/resize recovery (`SIGWINCH` on Unix, console-size polling on Windows), mode reassertion and extended-key negotiation
+- terminal focus, suspend/resume, SIGCONT/resize recovery (`SIGWINCH` on Unix; native `ReadConsoleInputW` resize events on Windows), mode reassertion and extended-key negotiation
 - asynchronous terminal queries (`DECRQM`, DA1/DA2, Kitty keyboard, cursor, OSC color, XTVERSION)
 - OSC52, tmux and native clipboard paths (`pbcopy`, `wl-copy`, `xclip`, `xsel`, `clip.exe`)
 - title, bell, notifications, version-gated progress and tab-status sequences
@@ -77,6 +77,8 @@ Domain aliases preserve Go type identity, so nodes/styles do not need adapters o
 The physical implementation lives under `internal/engine`; the root package is a generated compatibility facade. Run `go generate ./...` after changing exported engine declarations.
 
 ## Embedding
+
+On Windows, `Runtime.Run` takes exclusive ownership of a real console input handle through `ReadConsoleInputW`. This is what makes resize event-driven without polling while preserving keyboard/mouse/focus records. If an embedded application uses `Start` and owns the input loop itself, it also owns resize notification and may call `RefreshSize` when its host reports a console change.
 
 For a caller-owned event loop:
 
@@ -144,7 +146,7 @@ go generate ./...
 go test ./...
 go vet ./...
 go test -race ./...
-./scripts/check-coverage.sh 74.0 coverage.out
+./scripts/check-coverage.sh 77.0 coverage.out
 ./scripts/check-no-external-deps.sh
 ./scripts/check-version.sh
 ```
@@ -172,9 +174,10 @@ go run ./examples/terminal-smoke
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — ownership and package boundaries
 - [`docs/MIGRATION.md`](docs/MIGRATION.md) — mapping from the TypeScript/React model
 - [`docs/STABILITY.md`](docs/STABILITY.md) — public API/version policy
-- [`docs/RELEASE.md`](docs/RELEASE.md) — `v0.1.6` publication checklist and repository metadata
+- [`docs/RELEASE.md`](docs/RELEASE.md) — checklist for preparing the next release
 - [`docs/PORT_STATUS.md`](docs/PORT_STATUS.md) — remaining parity boundary
 - [`docs/validation/ROUND5.md`](docs/validation/ROUND5.md) — production-hardening evidence
+- [`docs/validation/WINDOWS_NATIVE_INPUT.md`](docs/validation/WINDOWS_NATIVE_INPUT.md) — Windows native console input and resize validation
 
 ## License
 

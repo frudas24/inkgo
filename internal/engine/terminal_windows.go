@@ -41,8 +41,13 @@ func makeRaw(f *os.File) (any, error) {
 	const enableProcessedInput = 0x0001
 	const enableLineInput = 0x0002
 	const enableEchoInput = 0x0004
+	const enableWindowInput = 0x0008
+	const enableMouseInput = 0x0010
+	const enableQuickEditMode = 0x0040
+	const enableExtendedFlags = 0x0080
 	const enableVirtualTerminalInput = 0x0200
-	mode := (old &^ (enableProcessedInput | enableLineInput | enableEchoInput)) | enableVirtualTerminalInput
+	mode := old &^ (enableProcessedInput | enableLineInput | enableEchoInput | enableQuickEditMode)
+	mode |= enableWindowInput | enableMouseInput | enableExtendedFlags | enableVirtualTerminalInput
 	r, _, e = procSetConsoleMode.Call(f.Fd(), uintptr(mode))
 	if r == 0 {
 		return nil, e

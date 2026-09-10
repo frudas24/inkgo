@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- replace Windows' 60 ms console-size polling with an event-driven `ReadConsoleInputW` pump owned exclusively by `Runtime.Run`; `WINDOW_BUFFER_SIZE_EVENT` now feeds the existing coalesced resize queue directly, while `WaitForMultipleObjects` waits on console input plus a stop event with no periodic timer;
+- preserve the full Windows console input stream while taking native ownership: `KEY_EVENT`, `MOUSE_EVENT` and `FOCUS_EVENT` records are translated into the existing parser-compatible VT stream, including UTF-16 surrogate pairs, AltGr, repeat counts and viewport-relative mouse coordinates;
+- extend legacy xterm modifier parsing for Insert/Delete/PageUp/PageDown and F1-F12 so native Windows special keys retain Shift/Alt/Ctrl semantics;
+- request `ENABLE_WINDOW_INPUT`/`ENABLE_MOUSE_INPUT` in Windows raw mode and disable Quick Edit while the runtime owns the console, restoring the exact prior mode on exit;
+- remove repeated full-tree scroll-node walks from the xterm.js policy, selection-scroll reconciliation and wheel fallback by reusing the layout-owned scroll-node index on stable trees, while retaining dirty-layout discovery for correctness;
+- replace the slow-subscriber scheduler regression's throughput-sensitive 100 ms assertion with a synchronization-based non-reentrancy test;
+- test the minimum supported Go line (`1.23.x`) and current `stable` Go across Linux, macOS and Windows in CI; run race, coverage and fuzz smoke on stable and raise the coverage gate from 74% to 77%;
+- refresh release documentation for the already-published `v0.1.6` tag and keep the customized-fork provenance clarification explicit.
+
 ## v0.1.6 — Windows-flaky clock assertion fix
 
 - fix a Windows-only flaky assertion in `TestNowUsesTickTimestampOnlyDuringCallbacks`: the time since clock start can still read as zero immediately after a tick, which made a live `Now()` indistinguishable from a frozen one; the assertion now sleeps past the clock resolution and no longer fails the Windows CI job. No library behavior changed.
@@ -40,6 +49,14 @@
 - fixed `MANIFEST.sha256` generation so ignored/generated `coverage.out` is never listed in a clean source manifest;
 - added reproducible manifest update/check scripts and a CI policy gate so a manifest cannot reference files absent from a clean checkout;
 - retained zero external Go modules and made no runtime/API behavior changes.
+
+## v0.1.1 — manifest portability
+
+- fixed `MANIFEST.sha256` so clean checkouts no longer reference `.git/*` VCS internals; published as a new immutable tag because `v0.1.0` had already been cached by the Go module proxy.
+
+## v0.1.0 — first public Go release
+
+- published the first tagged `github.com/frudas24/inkgo` release from the Round-5 production-hardening baseline.
 
 ## Round 5 — 2026-09-09
 

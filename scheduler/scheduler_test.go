@@ -48,22 +48,47 @@ func TestClockDoesNotOverlapSlowSubscriberTicks(t *testing.T) {
 	var active atomic.Int32
 	var overlap atomic.Bool
 	var calls atomic.Int32
+	firstStarted := make(chan struct{}, 1)
+	releaseFirst := make(chan struct{})
+	secondDone := make(chan struct{}, 1)
+
 	unsub := c.Subscribe(func(time.Duration) {
 		if active.Add(1) != 1 {
 			overlap.Store(true)
 		}
-		time.Sleep(4 * time.Millisecond)
-		calls.Add(1)
+		call := calls.Add(1)
+		if call == 1 {
+			firstStarted <- struct{}{}
+			<-releaseFirst
+		}
 		active.Add(-1)
+		if call == 2 {
+			secondDone <- struct{}{}
+		}
 	}, true)
 	defer unsub()
 
-	deadline := time.Now().Add(100 * time.Millisecond)
-	for calls.Load() < 3 && time.Now().Before(deadline) {
-		time.Sleep(time.Millisecond)
+	select {
+	case <-firstStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("first clock callback did not start")
 	}
-	if calls.Load() < 3 {
-		t.Fatalf("only %d callbacks completed", calls.Load())
+
+	// Hold the first callback past several nominal tick intervals. A broken
+	// re-entrant clock would invoke the subscriber again while it is blocked.
+	time.Sleep(10 * time.Millisecond)
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("slow subscriber was re-entered: calls=%d", got)
+	}
+	if overlap.Load() {
+		t.Fatal("shared clock re-entered a slow subscriber")
+	}
+
+	close(releaseFirst)
+	select {
+	case <-secondDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("clock did not resume after slow subscriber completed")
 	}
 	if overlap.Load() {
 		t.Fatal("shared clock re-entered a slow subscriber")
