@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- bound the two tab/wrap performance regressions by a deadline instead of checking elapsed time after the call returns: on the quadratic implementation they now fail within 30 s each with a clear diagnostic, where they previously blocked for roughly 75 minutes before reporting (or tripped a CI job timeout);
+- advance the release-checklist tag example to the next version, which had been left pointing at an already-published tag while the header named a newer one;
+
 ## v0.1.17 — linear tab expansion (wrap performance)
 
 - fix the quadratic cost of tab expansion: `ExpandTabs` segmented the rest of the plain span once per grapheme and kept only the first cluster, so a single long line was scanned once per grapheme. Measured on the validation host before the fix: 1 KB 65 ms, 8 KB 3.9 s, 32 KB 64 s, and 512 KB would have run for hours; after the fix the same inputs take 1.2 ms, 10.9 ms, 40 ms and 0.64 s, i.e. linear in the input size;

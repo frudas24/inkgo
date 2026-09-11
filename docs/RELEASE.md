@@ -43,18 +43,18 @@ Ubuntu, macOS and Windows, with an additional Linux race campaign.
 ## Tag
 
 After the validated tree is committed to `main`, choose a new immutable semantic
-version (for example `v0.1.16`) and create an annotated tag:
+version (for example `v0.1.18`) and create an annotated tag:
 
 ```bash
-git tag -a v0.1.16 -m "inkgo v0.1.16"
-git push origin v0.1.16
+git tag -a v0.1.18 -m "inkgo v0.1.18"
+git push origin v0.1.18
 ```
 
 Then verify the exact version you published:
 
 ```bash
-go list -m github.com/frudas24/inkgo@v0.1.16
-go get github.com/frudas24/inkgo@v0.1.16
+go list -m github.com/frudas24/inkgo@v0.1.18
+go get github.com/frudas24/inkgo@v0.1.18
 ```
 
 ## Suggested GitHub metadata
