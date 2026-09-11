@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## v0.1.17 — linear tab expansion (wrap performance)
+
+- fix the quadratic cost of tab expansion: `ExpandTabs` segmented the rest of the plain span once per grapheme and kept only the first cluster, so a single long line was scanned once per grapheme. Measured on the validation host before the fix: 1 KB 65 ms, 8 KB 3.9 s, 32 KB 64 s, and 512 KB would have run for hours; after the fix the same inputs take 1.2 ms, 10.9 ms, 40 ms and 0.64 s, i.e. linear in the input size;
+- the visible output is unchanged: a differential harness compared the new walk against the previous implementation over 20,000 randomized inputs (tabs, SGR/OSC escapes, CR/LF, combining marks, variation selectors, keycaps, wide CJK and emoji) with byte-identical results;
+- consequence for fuzzing: `FuzzWrapTextInvariants` now completes a 60 s run, where mutation growth past roughly 10 KB previously killed the worker as hung; the five-second CI smoke was already inside that bound;
+- add two permanent regression tests that fail the quadratic implementation (a 256 KB tab span and a 128 KB ANSI line) with bounds two orders of magnitude above the linear cost, plus the differential check's corpus in the existing wrap tests;
+- no public API change; `go generate` leaves `api.go` untouched;
+
 ## v0.1.16 — ANSI-in-grapheme tokenizer fix
 
 - tokenize output text after normalizing ANSI/control sequences instead of before: an escape sitting between a base rune and its combining rune (for example `0\x1b[31m\u20e3`, or SGR/OSC inside a keycap or family sequence) does not create a Unicode grapheme boundary, but segmenting first split the cluster and could produce a row wider than the requested wrap width;

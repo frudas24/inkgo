@@ -50,20 +50,18 @@ func ExpandTabs(text string, interval ...int) string {
 			i++
 			continue
 		}
-		// Consume one grapheme from the next plain span to keep cell width exact.
+		// Segment the whole plain span once and walk its graphemes. Segmenting the
+		// remaining span per grapheme (to keep cell width exact) made this loop
+		// quadratic: each step re-scanned everything left in the span.
 		j := i
 		for j < len(text) && text[j] != 0x1b && text[j] != '\t' && text[j] != '\n' && text[j] != '\r' {
 			j++
 		}
-		gs := Graphemes(text[i:j])
-		if len(gs) == 0 {
-			i = j
-			continue
+		for _, g := range Graphemes(text[i:j]) {
+			b.WriteString(g.Text)
+			col += g.Width
 		}
-		g := gs[0]
-		b.WriteString(g.Text)
-		col += g.Width
-		i += len(g.Text)
+		i = j
 	}
 	return b.String()
 }
