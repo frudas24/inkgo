@@ -9,10 +9,10 @@ The library provides concrete `*Node` trees, flex layout, Unicode-aware cell ren
 Requires **Go 1.23+**.
 
 ```bash
-go get github.com/frudas24/inkgo@v0.1.15
+go get github.com/frudas24/inkgo@v0.1.16
 ```
 
-The latest published release is `v0.1.15`. Development checkouts may contain entries under `Unreleased`; consumers that need reproducible builds should pin a published tag or an explicit commit.
+The latest published release is `v0.1.16`. Development checkouts may contain entries under `Unreleased`; consumers that need reproducible builds should pin a published tag or an explicit commit.
 
 **Runtime/module dependencies: zero.** `go list -m all` from the repository root contains only `github.com/frudas24/inkgo`.
 

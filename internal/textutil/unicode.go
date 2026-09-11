@@ -441,12 +441,16 @@ func SliceByWidth(s string, start, end int) string {
 				startOutput()
 				b.WriteString(tok.text)
 			}
+			observeTerminalTokenANSI(&state, tok)
 			continue
 		}
 		if pos >= start && next <= end {
 			startOutput()
 			b.WriteString(tok.text)
 		}
+		// ANSI embedded inside one visible grapheme still affects all following
+		// output even when this grapheme falls outside the requested slice.
+		observeTerminalTokenANSI(&state, tok)
 		// Wide glyphs straddling a boundary are omitted, matching the fork's
 		// sliceFit invariant of never overshooting the requested cell range.
 		pos = next

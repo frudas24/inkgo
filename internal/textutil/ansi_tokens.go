@@ -10,6 +10,12 @@ type terminalToken struct {
 	text   string
 	width  int
 	escape bool
+	// ansi records preserved escape sequences embedded inside a visible
+	// grapheme token. ANSI controls are zero-width and therefore do not form a
+	// grapheme boundary: e.g. "0\x1b[31m\u20e3" is still one keycap cluster.
+	// Keeping the sequences here lets slicing/state restoration observe their
+	// side effects without splitting the visual cluster used by wrapping.
+	ansi []string
 }
 
 func scanOutputEscape(s string) (seq string, consumed int, preserve bool) {
@@ -39,43 +45,108 @@ func terminalTokens(s string) []terminalToken {
 	if s == "" {
 		return nil
 	}
-	out := make([]terminalToken, 0, len(s))
+
+	// First remove malformed/incomplete output controls and record valid ANSI
+	// sequences by their byte position in the visible stream. Grapheme
+	// segmentation must happen *after* that normalization: an ANSI sequence (or
+	// a dropped stray ESC) between a base and a combining rune does not create a
+	// Unicode grapheme boundary.
+	type ansiEvent struct {
+		pos int
+		seq string
+	}
+	var visible strings.Builder
+	events := make([]ansiEvent, 0, 8)
 	for i := 0; i < len(s); {
 		if s[i] == 0x1b {
 			seq, consumed, preserve := scanOutputEscape(s[i:])
 			if preserve {
-				out = append(out, terminalToken{text: seq, escape: true})
+				events = append(events, ansiEvent{pos: visible.Len(), seq: seq})
 			}
 			i += consumed
 			continue
 		}
-
 		j := i + 1
 		for j < len(s) && s[j] != 0x1b {
 			j++
 		}
-		// wrap-ansi splits words on literal ASCII spaces before grapheme
-		// segmentation. Keep spaces as standalone tokens too; otherwise a
-		// following zero-width control/combining rune can merge into the space
-		// cluster and make trim/word-boundary detection miss it.
-		plain := s[i:j]
-		for len(plain) > 0 {
-			space := strings.IndexByte(plain, ' ')
-			if space < 0 {
-				for _, g := range Graphemes(plain) {
-					out = append(out, terminalToken{text: g.Text, width: g.Width})
-				}
-				break
-			}
-			if space > 0 {
-				for _, g := range Graphemes(plain[:space]) {
-					out = append(out, terminalToken{text: g.Text, width: g.Width})
-				}
-			}
-			out = append(out, terminalToken{text: " ", width: 1})
-			plain = plain[space+1:]
-		}
+		visible.WriteString(s[i:j])
 		i = j
+	}
+
+	plain := visible.String()
+	out := make([]terminalToken, 0, len(plain)+len(events))
+	eventIndex := 0
+	pos := 0
+
+	emitBoundaryANSI := func(at int) {
+		for eventIndex < len(events) && events[eventIndex].pos == at {
+			out = append(out, terminalToken{text: events[eventIndex].seq, escape: true})
+			eventIndex++
+		}
+	}
+
+	for _, g := range Graphemes(plain) {
+		start := pos
+		end := start + len(g.Text)
+		emitBoundaryANSI(start)
+
+		// Preserve literal ASCII spaces as standalone delimiter tokens. The
+		// existing word-wrap semantics intentionally split on those spaces, while
+		// any combining suffix stays zero-width and follows the delimiter.
+		if strings.HasPrefix(g.Text, " ") {
+			out = append(out, terminalToken{text: " ", width: 1})
+			cursor := start + 1
+			if cursor < end {
+				var b strings.Builder
+				var embedded []string
+				for eventIndex < len(events) && events[eventIndex].pos < end {
+					ev := events[eventIndex]
+					if ev.pos > cursor {
+						b.WriteString(plain[cursor:ev.pos])
+					}
+					b.WriteString(ev.seq)
+					embedded = append(embedded, ev.seq)
+					cursor = ev.pos
+					eventIndex++
+				}
+				if cursor < end {
+					b.WriteString(plain[cursor:end])
+				}
+				if b.Len() > 0 {
+					out = append(out, terminalToken{text: b.String(), ansi: embedded})
+				}
+			}
+			pos = end
+			continue
+		}
+
+		var b strings.Builder
+		var embedded []string
+		cursor := start
+		for eventIndex < len(events) && events[eventIndex].pos < end {
+			ev := events[eventIndex]
+			if ev.pos > cursor {
+				b.WriteString(plain[cursor:ev.pos])
+			}
+			b.WriteString(ev.seq)
+			embedded = append(embedded, ev.seq)
+			cursor = ev.pos
+			eventIndex++
+		}
+		if cursor < end {
+			b.WriteString(plain[cursor:end])
+		}
+		out = append(out, terminalToken{text: b.String(), width: g.Width, ansi: embedded})
+		pos = end
+	}
+
+	emitBoundaryANSI(len(plain))
+	// Defensive only: events are emitted in monotonically increasing visible
+	// positions, so all of them should have been consumed above.
+	for eventIndex < len(events) {
+		out = append(out, terminalToken{text: events[eventIndex].seq, escape: true})
+		eventIndex++
 	}
 	return out
 }
@@ -166,6 +237,16 @@ func (s *sliceANSIState) closing() string {
 	return b.String()
 }
 
+func observeTerminalTokenANSI(state *sliceANSIState, tok terminalToken) {
+	if tok.escape {
+		state.observe(tok.text)
+		return
+	}
+	for _, seq := range tok.ansi {
+		state.observe(seq)
+	}
+}
+
 func restoreVisualStateAcrossRows(rows []string) []string {
 	if len(rows) < 2 {
 		return rows
@@ -182,9 +263,7 @@ func restoreVisualStateAcrossRows(rows []string) []string {
 		}
 		b.WriteString(row)
 		for _, tok := range terminalTokens(row) {
-			if tok.escape {
-				state.observe(tok.text)
-			}
+			observeTerminalTokenANSI(&state, tok)
 		}
 		if i < len(rows)-1 && row != "" {
 			b.WriteString(state.closing())

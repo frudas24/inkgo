@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## v0.1.16 — ANSI-in-grapheme tokenizer fix
+
+- tokenize output text after normalizing ANSI/control sequences instead of before: an escape sitting between a base rune and its combining rune (for example `0\x1b[31m\u20e3`, or SGR/OSC inside a keycap or family sequence) does not create a Unicode grapheme boundary, but segmenting first split the cluster and could produce a row wider than the requested wrap width;
+- record preserved ANSI sequences by their position in the visible stream and attach them to the grapheme tokens they belong to, so wrapping keeps the visual cluster while slicing and terminal-state restoration still observe the escape effects - including escapes inside a grapheme that falls outside the requested slice range;
+- keep the audit reproducer (SGR/OSC between base and combining rune) plus a permanent fuzz seed as regressions;
+
 ## v0.1.15 — runtime lifecycle hardening and a wrap trim fix
 
 - fix a wrap width-invariant violation in trim mode: the tokenizer splits a literal space away from the zero-width runes sharing its grapheme cluster, and dropping only the space left the orphan rune to re-attach to the preceding base, so a trailing VS16 on a variation base widened a row beyond the width the token accounting had produced; trimming a trailing space now drops its attached zero-width runes too, with the fuzz reproducer committed as a permanent seed;

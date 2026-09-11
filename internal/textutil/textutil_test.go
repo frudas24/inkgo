@@ -216,6 +216,36 @@ func TestMalformedUTF8AndIncompleteEscapeStayConsistent(t *testing.T) {
 	}
 }
 
+func TestWrapTreatsANSIInsideGraphemeAsZeroWidthBoundary(t *testing.T) {
+	cases := []string{
+		"0000\x1b\u20e3",          // dropped stray ESC must not split the keycap cluster
+		"0000\x1b[31m\u20e3",      // valid SGR is also zero-width inside the grapheme
+		"0000\x1b]8;;x\x07\u20e3", // OSC hyperlink controls are zero-width too
+	}
+	for _, in := range cases {
+		got := WrapText(in, 4, core.TextWrapWrap)
+		for _, line := range strings.Split(got, "\n") {
+			if width := StringWidth(line); width > 4 {
+				t.Fatalf("WrapText(%q) produced width %d > 4: %q", in, width, got)
+			}
+		}
+		if visible := strings.ReplaceAll(StripANSI(got), "\n", ""); visible != "0000\u20e3" {
+			t.Fatalf("WrapText(%q) changed visible text: %q", in, visible)
+		}
+	}
+}
+
+func TestSliceByWidthKeepsANSIInterruptedGraphemeAtomic(t *testing.T) {
+	in := "a0\x1b[31m\u20e3b\x1b[0m"
+	got := SliceByWidth(in, 1, 3)
+	if visible := StripANSI(got); visible != "0\u20e3" {
+		t.Fatalf("slice visible=%q raw=%q", visible, got)
+	}
+	if width := StringWidth(got); width != 2 {
+		t.Fatalf("slice width=%d raw=%q", width, got)
+	}
+}
+
 func TestSliceAndTruncateCloseANSIState(t *testing.T) {
 	red := "\x1b[31mabcdef\x1b[0m"
 	sliced := SliceByWidth(red, 0, 3)
