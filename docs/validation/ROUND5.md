@@ -164,4 +164,6 @@ Source engineering is ready for a `v0.1.0` candidate, but the following external
 1. commit/push this exact tree, allow the new CI workflow to run on GitHub-hosted Windows/macOS/Linux runners, then tag the validated commit `v0.1.0`;
 2. execute `examples/terminal-smoke` in a real Windows Terminal/PowerShell console and record the result;
 3. apply repository description/topics if desired;
-4. verify upstream/custom-fork license provenance and add the appropriate license/attribution before public release, because the supplied TypeScript archive contained no license file.
+4. retain the upstream/custom-fork MIT license and attribution in releases;
+	the source repository's license is recorded in `LICENSE` and
+	`THIRD_PARTY_NOTICES.md`.

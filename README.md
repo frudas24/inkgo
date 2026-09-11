@@ -122,8 +122,10 @@ state before returning and can be retried.
 `Stop()` wakes `Run()` even while input is blocked, without closing caller-owned
 input. A generic `io.Reader` cannot cancel an outstanding read: the input worker
 may remain blocked until that read returns, and may consume that next chunk.
-Close or otherwise unblock the source before reusing it elsewhere; applications
-that need full control over input cancellation should own the input loop.
+`Stop()` is terminal for that runtime; after stopping, create a new runtime
+instead of calling `Start()` again. Close or otherwise unblock the source before
+reusing it elsewhere; applications that need full control over input cancellation
+should own the input loop.
 
 ## Renderer ownership
 
@@ -193,6 +195,6 @@ go run ./examples/terminal-smoke
 ## License
 
 MIT — see [`LICENSE`](LICENSE). This library is a native Go port of Ink
-(MIT, Vadim Demedes) via a customized Ink fork; see
-[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for the lineage and the
-outstanding clarification about the fork's undeclared customizations.
+(MIT, Vadym Demedes and Sindre Sorhus) via a customized Ink fork; see
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for the lineage and
+attribution.

@@ -72,8 +72,7 @@ Stars are a community metric, not a release-readiness requirement.
 ## License / provenance
 
 The repository now carries an MIT `LICENSE` and `THIRD_PARTY_NOTICES.md` for the
-known upstream Ink-derived portions. The customized Ink reference fork used for
-behavioral parity still lacks an explicit license declaration for its own
-modifications. Keep that outstanding clarification visible unless written
-permission or a compatible license declaration for those customizations is
-available; do not infer or invent one.
+upstream Ink-derived portions. The audited reference repository declares the
+same MIT terms and the Vadym Demedes/Sindre Sorhus attribution; retain that
+notice when distributing the Go port. Keep the clean-room/native-port boundary
+documented in `THIRD_PARTY_NOTICES.md`.

@@ -97,4 +97,5 @@ No new architectural P0 was found. The remaining known boundaries are deliberate
 
 A real Windows Terminal/PowerShell interactive smoke remains valuable for `ReadConsoleInputW` behavior because cross-builds and headless Windows CI cannot fully reproduce a user's physical/interactive console session.
 
-Customized-fork provenance/licensing clarification also remains an external release-hygiene item and must not be invented by code changes.
+The customized-fork source repository's MIT license and attribution are now
+recorded in `LICENSE` and `THIRD_PARTY_NOTICES.md`; preserve them in releases.
