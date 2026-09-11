@@ -218,7 +218,17 @@ func visibleTrimSpacesRight(tokens []terminalToken) []terminalToken {
 			continue
 		}
 		if !seenVisible && tok.text == " " {
-			tokens = append(tokens[:i], tokens[i+1:]...)
+			// The tokenizer splits a literal space away from zero-width runes
+			// that share its grapheme cluster (a variation selector or a
+			// combining mark). Leaving those behind would let them re-attach to
+			// the preceding base after the space is dropped - a trailing VS16
+			// on a variation base widens it, so the row would measure wider
+			// than the token accounting that produced it.
+			end := i + 1
+			for end < len(tokens) && !tokens[end].escape && tokens[end].width == 0 {
+				end++
+			}
+			tokens = append(tokens[:i], tokens[end:]...)
 			continue
 		}
 		if tok.width > 0 {

@@ -4,7 +4,6 @@ import (
 	core "github.com/frudas24/inkgo/internal/core"
 	"math"
 	"sort"
-	"strings"
 )
 
 type layoutCtx struct {
@@ -170,7 +169,6 @@ func measureFlowContent(flow []*Node, s Style, dir FlexDirection, availW, availH
 		}
 		if wrap && lineMain > 0 && lineMain+need > mainAvail {
 			flush()
-			need = it.main
 		}
 		if lineMain > 0 {
 			lineMain += mainGap
@@ -380,7 +378,6 @@ func makeFlexLines(items []*flexItem, dir FlexDirection, mainAvail, gap int, wra
 		if len(cur.items) > 0 && cur.mainUsed+need > mainAvail {
 			lines = append(lines, cur)
 			cur = &flexLine{}
-			need = it.main + flexMainMargins(it, dir)
 		}
 		if len(cur.items) > 0 {
 			cur.mainUsed += gap
@@ -963,18 +960,4 @@ func hasAlternateScreen(root *Node) bool {
 		return true
 	})
 	return found
-}
-
-func intrinsicPlainText(n *Node) string {
-	var b strings.Builder
-	if n == nil {
-		return ""
-	}
-	n.Walk(func(cur *Node) bool {
-		if cur.Kind == NodeText || cur.Kind == NodeRawANSI {
-			b.WriteString(nodeText(cur))
-		}
-		return true
-	})
-	return b.String()
 }

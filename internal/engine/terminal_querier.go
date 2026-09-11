@@ -67,10 +67,19 @@ func (q *TerminalQuerier) Send(query TerminalQuery) <-chan *TerminalResponse {
 	p := &pendingTerminalQuery{query: &query, result: out}
 	q.mu.Lock()
 	q.pending = append(q.pending, p)
+	writeOK := true
 	if q.out != nil {
-		_, _ = io.WriteString(q.out, query.Request)
+		n, err := io.WriteString(q.out, query.Request)
+		writeOK = err == nil && n == len(query.Request)
+	}
+	if !writeOK {
+		q.pending = q.pending[:len(q.pending)-1]
 	}
 	q.mu.Unlock()
+	if !writeOK {
+		out <- nil
+		close(out)
+	}
 	return out
 }
 
@@ -80,10 +89,21 @@ func (q *TerminalQuerier) Flush() <-chan struct{} {
 	done := make(chan struct{})
 	q.mu.Lock()
 	q.pending = append(q.pending, &pendingTerminalQuery{sentinel: done})
+	writeOK := true
 	if q.out != nil {
-		_, _ = io.WriteString(q.out, CSI("c"))
+		request := CSI("c")
+		n, err := io.WriteString(q.out, request)
+		writeOK = err == nil && n == len(request)
+	}
+	var failed []*pendingTerminalQuery
+	if !writeOK {
+		failed = q.pending
+		q.pending = nil
 	}
 	q.mu.Unlock()
+	if !writeOK {
+		resolveUnsupported(failed)
+	}
 	return done
 }
 
@@ -145,6 +165,10 @@ func (q *TerminalQuerier) Close() {
 	items := q.pending
 	q.pending = nil
 	q.mu.Unlock()
+	resolveUnsupported(items)
+}
+
+func resolveUnsupported(items []*pendingTerminalQuery) {
 	for _, p := range items {
 		if p.query != nil {
 			p.result <- nil

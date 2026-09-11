@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- fix a wrap width-invariant violation in trim mode: the tokenizer splits a literal space away from the zero-width runes sharing its grapheme cluster, and dropping only the space left the orphan rune to re-attach to the preceding base, so a trailing VS16 on a variation base widened a row beyond the width the token accounting had produced; trimming a trailing space now drops its attached zero-width runes too, with the fuzz reproducer committed as a permanent seed;
+- fail `Runtime.Start` when a configured terminal input cannot enter raw mode instead of publishing false terminal ownership; `ResumeTerminal` now fails closed on the same boundary;
+- make terminal cleanup retryable after transient exit/raw/output-restore failures, preserving the exact pending exit sequence and completing old cleanup before a later `Start`/`ResumeTerminal` re-enters modes;
+- make `SuspendTerminal` retain incomplete cleanup instead of silently discarding it, so resume cannot stack a new alternate-screen/raw-mode transition over a failed suspension;
+- resolve terminal-query waiters immediately when query/sentinel writes fail or short-write, instead of leaving impossible pending requests until shutdown;
+- add a lifecycle state-machine fuzzer covering `Start`/`Close`/`SuspendTerminal`/`ResumeTerminal`/`Stop` under transient output failures;
+- make `Runtime.SetRoot` reentrancy-safe at the runtime layer: a nested root transition triggered by focus/blur callbacks now supersedes the older outer transition instead of being overwritten when the callback returns;
+- make `Close` a clean reusable lifecycle boundary by discarding incomplete parser fragments and transient pointer/drag/multi-click state before a later `Start`;
+- make `Stop` a permanent runtime termination boundary: `Start` returns an error and `ResumeTerminal` is a no-op after stop instead of re-entering terminal modes into an inert runtime;
+- propagate terminal-exit/raw-mode/output-restore failures from `Close`, from failed `Start` cleanup, and from the deferred cleanup performed by `Run`; cleanup remains best-effort and joins multiple failures rather than abandoning later restoration steps;
+- bound the wide-cell state-machine fuzzer to 256 mutations per input so CI keeps exploring distinct framebuffer states instead of spending a fuzz window replaying oversized mutation streams;
+- remove dead helpers/assignments reported by `staticcheck` without changing public API behavior;
+
 ## v0.1.14 — terminal Stop contract, nil-writer guard and MIT attribution
 
 - make `Stop` explicitly terminal for a runtime: `Start` on a runtime that has been stopped now returns an error instead of silently re-entering, while `Close` still only cycles terminal modes and may be followed by another `Start`;

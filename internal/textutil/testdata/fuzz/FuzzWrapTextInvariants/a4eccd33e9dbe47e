@@ -1,0 +1,4 @@
+go test fuzz v1
+string("©0\xb8\x8f0®0\xb8\x8f0™ ️")
+byte('\x05')
+bool(true)

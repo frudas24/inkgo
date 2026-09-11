@@ -167,6 +167,7 @@ go test ./internal/engine -run='^$' -fuzz=FuzzLayoutAndRenderInvariants -fuzztim
 go test ./internal/engine -run='^$' -fuzz=FuzzTreeMutationInvariants -fuzztime=5s
 go test ./internal/textutil -run='^$' -fuzz=FuzzWrapTextInvariants -fuzztime=5s
 go test ./internal/engine -run='^$' -fuzz=FuzzParseANSIInvariants -fuzztime=5s
+go test ./internal/engine -run='^$' -fuzz=FuzzRuntimeLifecycleInvariants -fuzztime=5s
 ```
 
 Examples:

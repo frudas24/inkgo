@@ -21,16 +21,6 @@ var (
 	AddEdges  = core.AddEdges
 )
 
-func clampFloat(v float64, lo, hi *float64) float64 {
-	if lo != nil && v < *lo {
-		v = *lo
-	}
-	if hi != nil && v > *hi {
-		v = *hi
-	}
-	return v
-}
-
 func roundCell(v float64) int {
 	if math.IsNaN(v) || math.IsInf(v, 0) {
 		return 0

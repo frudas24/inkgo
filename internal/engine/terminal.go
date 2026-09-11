@@ -2,6 +2,7 @@ package engine
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -114,6 +115,7 @@ type Runtime struct {
 	// It is per-runtime so multiple embedded PTYs do not share mutable state.
 	TerminalName  string
 	terminalFocus atomic.Int32
+	rootRevision  uint64
 
 	lastInputTime  time.Time
 	lastClickTime  time.Time
@@ -140,6 +142,7 @@ type Runtime struct {
 	raw                  *RawTerminal
 	outputRestore        func() error
 	entered              bool
+	pendingExitSequence  string
 	stopped              atomic.Bool
 }
 
@@ -191,7 +194,6 @@ func NewRuntime(root *Node, in io.Reader, out io.Writer, opts RenderOptions) *Ru
 }
 
 // Stop wakes Run and requests termination without closing the caller's input.
-// A stopped runtime cannot be started again; create a new Runtime instead.
 func (rt *Runtime) Stop() {
 	rt.stopped.Store(true)
 	rt.stopOnce.Do(func() { close(rt.stopCh) })
@@ -219,14 +221,28 @@ func (rt *Runtime) SetRoot(root *Node) {
 	if rt == nil || root == nil || rt.Root == root {
 		return
 	}
+	// SetRoot can synchronously invoke application focus/blur callbacks. If one
+	// of those callbacks replaces the runtime root again, that nested transition
+	// is newer and must win rather than being overwritten when this call resumes.
+	rt.rootRevision++
+	revision := rt.rootRevision
 	oldFocused := rt.Focus.Focused()
 	if oldFocused != nil && oldFocused != root && !oldFocused.IsDescendantOf(root) {
 		rt.Focus.Blur()
+		if rt.rootRevision != revision {
+			return
+		}
 	}
 	rt.Root = root
 	rt.Focus.SetRoot(root)
+	if rt.rootRevision != revision {
+		return
+	}
 	if rt.Focus.Focused() == nil {
 		rt.Focus.AutoFocus()
+		if rt.rootRevision != revision {
+			return
+		}
 	}
 	if rt.Renderer != nil {
 		rt.Renderer.Invalidate()
@@ -949,44 +965,95 @@ func (rt *Runtime) ReassertTerminalModes(includeAltScreen bool) {
 // SuspendTerminal restores host terminal state without stopping the Runtime.
 // It is useful before launching an external editor or on Ctrl+Z.
 func (rt *Runtime) SuspendTerminal() {
+	if rt == nil {
+		return
+	}
 	rt.lifecycleMu.Lock()
 	defer rt.lifecycleMu.Unlock()
 	if !rt.entered {
 		return
 	}
-	_ = rt.WriteRaw(rt.Renderer.ExitSequence(rt.Root))
-	if rt.raw != nil {
-		_ = rt.raw.Restore()
-		rt.raw = nil
-	}
-	if rt.outputRestore != nil {
-		_ = rt.outputRestore()
-		rt.outputRestore = nil
-	}
-	rt.entered = false
+	// The public method predates error-returning lifecycle APIs, so preserve its
+	// signature but retain any failed cleanup internally. ResumeTerminal will
+	// retry that cleanup before it attempts to enter terminal modes again.
+	_ = rt.restoreTerminalModesLocked(rt.Renderer.ExitSequence(rt.Root))
 }
 
 // ResumeTerminal re-enters raw/VT modes and forces a clean redraw.
 func (rt *Runtime) ResumeTerminal() {
-	rt.lifecycleMu.Lock()
-	if rt.entered {
-		rt.lifecycleMu.Unlock()
+	if rt == nil || rt.Stopped() {
 		return
 	}
-	if rt.Terminal != nil && rt.Terminal.In != nil {
-		rt.raw, _ = MakeRaw(rt.Terminal.In)
+	if rt.Started() {
+		return
 	}
-	if rt.Terminal != nil && rt.Terminal.Out != nil {
-		if restore, err := prepareOutput(rt.Terminal.Out); err == nil {
-			rt.outputRestore = restore
+	if rt.terminalCleanupPending() {
+		if err := rt.finishTerminalCleanup(); err != nil {
+			return
 		}
 	}
-	rt.Renderer.Invalidate()
-	_ = rt.WriteRaw(rt.Renderer.EnterSequence(rt.Root))
-	rt.entered = true
-	rt.lifecycleMu.Unlock()
+	if err := rt.enterTerminal(); err != nil {
+		return
+	}
 	// Rendering may invoke application callbacks, including lifecycle queries.
 	_, _ = rt.Render()
+}
+
+func (rt *Runtime) terminalCleanupPending() bool {
+	if rt == nil {
+		return false
+	}
+	rt.lifecycleMu.Lock()
+	defer rt.lifecycleMu.Unlock()
+	return !rt.entered && (rt.pendingExitSequence != "" || rt.raw != nil || rt.outputRestore != nil)
+}
+
+func (rt *Runtime) finishTerminalCleanup() error {
+	if rt == nil {
+		return nil
+	}
+	rt.lifecycleMu.Lock()
+	defer rt.lifecycleMu.Unlock()
+	if rt.entered {
+		return nil
+	}
+	return rt.restoreTerminalModesLocked(rt.pendingExitSequence)
+}
+
+// restoreTerminalModesLocked unwinds terminal state while lifecycleMu is held.
+// exitSequence may be empty when terminal entry failed before renderer modes
+// were emitted. Failed restore handles remain attached so Close can retry.
+func (rt *Runtime) restoreTerminalModesLocked(exitSequence string) error {
+	var cleanupErr error
+	exitOK := exitSequence == ""
+	if exitSequence != "" {
+		if err := rt.WriteRaw(exitSequence); err != nil {
+			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("write terminal exit sequence: %w", err))
+			rt.pendingExitSequence = exitSequence
+		} else {
+			rt.pendingExitSequence = ""
+			exitOK = true
+		}
+	}
+	if rt.raw != nil {
+		if err := rt.raw.Restore(); err != nil {
+			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("restore terminal input mode: %w", err))
+		} else {
+			rt.raw = nil
+		}
+	}
+	// Keep VT output enabled while an exit sequence still needs to be retried;
+	// otherwise a later Close could successfully write the bytes after the host
+	// mode that interprets them has already been restored.
+	if exitOK && rt.outputRestore != nil {
+		if err := rt.outputRestore(); err != nil {
+			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("restore terminal output mode: %w", err))
+		} else {
+			rt.outputRestore = nil
+		}
+	}
+	rt.entered = false
+	return cleanupErr
 }
 
 func (rt *Runtime) enterTerminal() error {
@@ -995,25 +1062,37 @@ func (rt *Runtime) enterTerminal() error {
 	if rt.entered {
 		return nil
 	}
+	if rt.pendingExitSequence != "" || rt.raw != nil || rt.outputRestore != nil {
+		return errors.New("terminal cleanup is incomplete")
+	}
 	if rt.Terminal != nil && rt.Terminal.In != nil {
-		rt.raw, _ = MakeRaw(rt.Terminal.In)
+		raw, err := MakeRaw(rt.Terminal.In)
+		if err != nil {
+			return fmt.Errorf("make terminal input raw: %w", err)
+		}
+		rt.raw = raw
 	}
 	if rt.Terminal != nil && rt.Terminal.Out != nil {
-		if restore, err := prepareOutput(rt.Terminal.Out); err == nil {
-			rt.outputRestore = restore
+		restore, err := prepareOutput(rt.Terminal.Out)
+		if err != nil {
+			cleanupErr := rt.restoreTerminalModesLocked("")
+			return errors.Join(fmt.Errorf("prepare terminal output: %w", err), cleanupErr)
 		}
+		rt.outputRestore = restore
 	}
 	// Re-entry clears the physical screen, so old frame history is obsolete.
 	rt.Renderer.Invalidate()
 	// Even a partial entry write must be paired with an exit attempt.
 	rt.entered = true
 	if err := rt.WriteRaw(rt.Renderer.EnterSequence(rt.Root)); err != nil {
-		return err
+		exitSequence := rt.Renderer.ExitSequence(rt.Root)
+		cleanupErr := rt.restoreTerminalModesLocked(exitSequence)
+		return errors.Join(err, cleanupErr)
 	}
 	return nil
 }
 
-func (rt *Runtime) leaveTerminal() {
+func (rt *Runtime) leaveTerminal() error {
 	rt.eventMu.Lock()
 	rt.eventsClosed = true
 	rt.cancelResizeLocked()
@@ -1024,6 +1103,22 @@ func (rt *Runtime) leaveTerminal() {
 	}
 	rt.eventMu.Unlock()
 	rt.cancelIncompleteTimer()
+	// Close is a lifecycle boundary: an incomplete Escape/bracketed-paste
+	// fragment from the old terminal ownership must not combine with input
+	// received after a later Start. Flush and intentionally discard it.
+	if rt.Parser != nil {
+		_ = rt.Parser.Flush()
+	}
+	if rt.Selection != nil {
+		rt.Selection.Finish()
+	}
+	rt.Selecting = false
+	rt.press = mousePressState{}
+	rt.lastClickTime = time.Time{}
+	rt.lastClick = Point{}
+	rt.clickCount = 0
+	rt.lastInputTime = time.Time{}
+	rt.terminalFocus.Store(int32(TerminalFocusUnknown))
 	rt.lifecycleMu.Lock()
 	defer rt.lifecycleMu.Unlock()
 	rt.linkGeneration++
@@ -1034,18 +1129,14 @@ func (rt *Runtime) leaveTerminal() {
 	if rt.Querier != nil {
 		rt.Querier.Close()
 	}
-	if rt.entered {
-		_ = rt.WriteRaw(rt.Renderer.ExitSequence(rt.Root))
+	exitSequence := rt.pendingExitSequence
+	if exitSequence == "" && rt.entered {
+		// Renderer.ExitSequence is stateful: generating it marks the renderer as
+		// exited. Retain the exact bytes only if the physical write fails so a
+		// later Close can retry the same terminal transition.
+		exitSequence = rt.Renderer.ExitSequence(rt.Root)
 	}
-	if rt.raw != nil {
-		_ = rt.raw.Restore()
-		rt.raw = nil
-	}
-	if rt.outputRestore != nil {
-		_ = rt.outputRestore()
-		rt.outputRestore = nil
-	}
-	rt.entered = false
+	return rt.restoreTerminalModesLocked(exitSequence)
 }
 
 // Started reports whether the runtime currently owns terminal modes.
@@ -1067,26 +1158,35 @@ func (rt *Runtime) Start() error {
 		return errors.New("runtime requires input and output")
 	}
 	if rt.Stopped() {
-		return errors.New("runtime has been stopped")
+		return errors.New("runtime is stopped")
 	}
 	if rt.Started() {
 		return nil
+	}
+	// A previous Close/failed Start may have restored only part of the terminal
+	// state. Finish that cleanup before entering again rather than stacking a new
+	// set of terminal modes on top of an incomplete exit.
+	if rt.terminalCleanupPending() {
+		if err := rt.finishTerminalCleanup(); err != nil {
+			return fmt.Errorf("complete previous terminal cleanup: %w", err)
+		}
 	}
 	rt.eventMu.Lock()
 	rt.eventsClosed = false
 	rt.eventMu.Unlock()
 	if err := rt.enterTerminal(); err != nil {
-		rt.leaveTerminal()
+		cleanupErr := rt.leaveTerminal()
 		rt.Renderer.Invalidate()
-		return err
+		return errors.Join(err, cleanupErr)
 	}
 	rt.ProbeTerminalIdentity()
 	_, err := rt.RenderSettled()
 	if err != nil {
-		rt.leaveTerminal()
+		cleanupErr := rt.leaveTerminal()
 		rt.Renderer.Invalidate()
+		return errors.Join(err, cleanupErr)
 	}
-	return err
+	return nil
 }
 
 // Close restores host terminal state and releases runtime-owned timers/query
@@ -1095,15 +1195,14 @@ func (rt *Runtime) Close() error {
 	if rt == nil {
 		return nil
 	}
-	rt.leaveTerminal()
-	return nil
+	return rt.leaveTerminal()
 }
 
 // Run owns terminal modes until Stop, EOF, or error. It dispatches callbacks on
 // its calling goroutine. An outstanding input Read may outlive Run until the
 // caller unblocks its reader; Run never closes caller-owned input.
 // Embedded loops use HandleInput, Render, and Events/ProcessEvents instead.
-func (rt *Runtime) Run() error {
+func (rt *Runtime) Run() (err error) {
 	if rt.In == nil || rt.Out == nil {
 		return errors.New("runtime requires input and output")
 	}
@@ -1116,7 +1215,7 @@ func (rt *Runtime) Run() error {
 	if err := rt.Start(); err != nil {
 		return err
 	}
-	defer rt.Close()
+	defer func() { err = errors.Join(err, rt.Close()) }()
 	// Keep at most one outstanding read. On a real Windows console, the native
 	// ReadConsoleInputW pump owns the INPUT_RECORD stream so resize events cannot
 	// race or compete with key reads. Pipes/PTYs and all non-Windows platforms

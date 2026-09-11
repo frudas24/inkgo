@@ -243,6 +243,12 @@ func FuzzScreenWideCellInvariants(f *testing.F) {
 	f.Add([]byte{7, 255, 8, 128, 9, 64})
 	f.Add([]byte{1, 10, 0, 1, 11, 0})
 	f.Fuzz(func(t *testing.T, data []byte) {
+		// The state space is a fixed 12x4 framebuffer. Bounding the operation
+		// stream keeps fuzz workers exploring distinct states instead of spending
+		// an entire fuzz window replaying a megabyte-scale mutation sequence.
+		if len(data) > 3*256 {
+			data = data[:3*256]
+		}
 		const width, height = 12, 4
 		s := NewScreen(width, height)
 		// Independent operation/column/row bytes reach wide glyphs at even columns.

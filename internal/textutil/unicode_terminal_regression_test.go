@@ -36,7 +36,7 @@ func TestGB11RequiresPictographImmediatelyAfterZWJ(t *testing.T) {
 }
 
 func TestKeycapRequiresExactSequenceShape(t *testing.T) {
-	for _, base := range []rune("#*0123456789") {
+	for _, base := range "#*0123456789" {
 		valid := []string{
 			string([]rune{base, 0x20e3}),
 			string([]rune{base, 0xfe0f, 0x20e3}),

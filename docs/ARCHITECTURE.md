@@ -90,7 +90,7 @@ On a stable large vertical scroll layout, the engine certifies directly ordered/
 
 ## Runtime concurrency
 
-`Runtime` can own the loop with `Run()` or participate in a caller-owned loop through `Start`, `HandleInput`, `RenderSettled`, and `Close`.
+`Runtime` can own the loop with `Run()` or participate in a caller-owned loop through `Start`, `HandleInput`, `RenderSettled`, and `Close`. `Close` releases terminal ownership and the same runtime may be started again; `Stop` is the permanent termination signal for that runtime, so a stopped runtime cannot be restarted or resumed.
 
 `Run` reads input through a worker and dispatches UI work on its owning goroutine.
 Timers and Unix signal handlers enqueue work instead of invoking application

@@ -18,5 +18,3 @@ const (
 )
 
 var NewInputParser = parser.NewInputParser
-
-func nextEscapeSequence(s string) (string, bool) { return parser.NextEscapeSequence(s) }
