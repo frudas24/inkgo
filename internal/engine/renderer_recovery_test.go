@@ -50,3 +50,10 @@ func TestFrameWriterRetriesFailedOutput(t *testing.T) {
 		})
 	}
 }
+
+func TestFrameWriterRejectsNilWriter(t *testing.T) {
+	r := NewRenderer(RenderOptions{Width: 20, Height: 4, Fullscreen: true})
+	if _, err := r.WriteFrame(nil, Root(Text("hello"))); err == nil {
+		t.Fatal("WriteFrame accepted a nil writer")
+	}
+}

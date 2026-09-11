@@ -25,6 +25,20 @@ func TestRuntimeReopenFrame(t *testing.T) {
 	}
 }
 
+func TestRuntimeCannotRestartAfterStop(t *testing.T) {
+	rt := NewRuntime(Root(Text("hello")), strings.NewReader(""), io.Discard, RenderOptions{})
+	if err := rt.Start(); err != nil {
+		t.Fatal(err)
+	}
+	rt.Stop()
+	if err := rt.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := rt.Start(); err == nil {
+		t.Fatal("stopped runtime restarted")
+	}
+}
+
 // eofWithData exercises readers that return the last bytes together with EOF.
 type eofWithData struct{ io.Reader }
 

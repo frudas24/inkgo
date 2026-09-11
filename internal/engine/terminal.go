@@ -191,6 +191,7 @@ func NewRuntime(root *Node, in io.Reader, out io.Writer, opts RenderOptions) *Ru
 }
 
 // Stop wakes Run and requests termination without closing the caller's input.
+// A stopped runtime cannot be started again; create a new Runtime instead.
 func (rt *Runtime) Stop() {
 	rt.stopped.Store(true)
 	rt.stopOnce.Do(func() { close(rt.stopCh) })
@@ -1064,6 +1065,9 @@ func (rt *Runtime) Started() bool {
 func (rt *Runtime) Start() error {
 	if rt == nil || rt.In == nil || rt.Out == nil {
 		return errors.New("runtime requires input and output")
+	}
+	if rt.Stopped() {
+		return errors.New("runtime has been stopped")
 	}
 	if rt.Started() {
 		return nil

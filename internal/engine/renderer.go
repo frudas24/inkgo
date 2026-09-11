@@ -1,12 +1,14 @@
 package engine
 
 import (
-	core "github.com/frudas24/inkgo/internal/core"
+	"errors"
 	"io"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	core "github.com/frudas24/inkgo/internal/core"
 )
 
 type RenderOptions struct {
@@ -804,6 +806,9 @@ func paintANSILines(screen *Screen, n *Node, r, clip Rect, base TextStyle, baseH
 }
 
 func (r *Renderer) WriteFrame(w io.Writer, root *Node) (Frame, error) {
+	if w == nil {
+		return Frame{}, errors.New("renderer requires writer")
+	}
 	f := r.Render(root)
 	if f.Patch == "" {
 		return f, nil
