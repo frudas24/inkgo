@@ -4,7 +4,7 @@
 
 The Go port is approximately **99% functionally equivalent for practical terminal-UI use**. Round 5 deliberately prioritized production behavior, packaging and maintainability over chasing implementation identity with JavaScript/React/Yoga internals.
 
-The project is stdlib-only, CGO-free, importable as `github.com/frudas24/inkgo`, and `v0.1.13` is publicly tagged. Development checkouts may contain additional `Unreleased` hardening.
+The project is stdlib-only, CGO-free, importable as `github.com/frudas24/inkgo`, and `v0.1.14` is publicly tagged. Development checkouts may contain additional `Unreleased` hardening.
 
 ## Closed in Round 5
 
@@ -18,7 +18,7 @@ The project is stdlib-only, CGO-free, importable as `github.com/frudas24/inkgo`,
 - bounded renderer scroll history across repeated root replacement;
 - focus-manager disabled traversal contract bug.
 
-## v0.1.7 through v0.1.13 hardening (post-v0.1.6)
+## v0.1.7 through v0.1.14 hardening (post-v0.1.6)
 
 `v0.1.7` replaces Windows console-size polling with native `ReadConsoleInputW` ownership inside `Runtime.Run`. Resize now arrives as `WINDOW_BUFFER_SIZE_EVENT`; key/mouse/focus records are preserved through the same input owner, and the blocking pump is stopped by a kernel event rather than a periodic timer.
 
@@ -34,6 +34,8 @@ The project is stdlib-only, CGO-free, importable as `github.com/frudas24/inkgo`,
 
 `v0.1.13` closes ownership and lifecycle gaps the earlier audits left behind. Tree mutation snapshots incoming child lists before reparenting, so passing another node's `Children` slice no longer skips elements, and it rejects nil, duplicate and ancestor-cycle entries. Focus transitions publish state before callbacks and use a revision counter so a nested focus/blur supersedes the outer one, programmatic focus outside the managed tree or under a hidden ancestor is refused, and input no longer routes to a detached or hidden focused node. Expired-button render callbacks run before the renderer's history lock, which removes a real deadlock when a callback inspects the viewport or changes its size. A wide-cell write at the right edge is rejected before it clears the existing pair, truncation to one column preserves text that already fits, and a runtime stopped by a node handler no longer delivers the global paste callback. Coverage reached 82.2% with a sixth permanent fuzz target, `FuzzTreeMutationInvariants`, added to CI.
 
+`v0.1.14` makes `Stop` explicitly terminal: starting a runtime that has been stopped now returns an error rather than silently re-entering, while `Close` still only cycles terminal modes and may be followed by another `Start`. `Renderer.WriteFrame` also rejects a nil writer with a typed error instead of dereferencing it, and `LICENSE`/`THIRD_PARTY_NOTICES.md` now record the MIT terms and the upstream Ink attribution for the derived portions.
+
 ## Deliberately remaining parity boundary
 
 The final ~1% is dominated by low-ROI edge identity rather than missing everyday capabilities:
@@ -47,4 +49,4 @@ No vendor should be added merely to erase this percentage. Add complexity only w
 
 ## Release boundary
 
-The latest published tag is `v0.1.13`. New changes should remain under `Unreleased` until the next validated tag is created. Repository description/topics are GitHub metadata and are not part of source archives. See `RELEASE.md`.
+The latest published tag is `v0.1.14`. New changes should remain under `Unreleased` until the next validated tag is created. Repository description/topics are GitHub metadata and are not part of source archives. See `RELEASE.md`.

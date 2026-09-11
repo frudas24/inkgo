@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## v0.1.14 — terminal Stop contract, nil-writer guard and MIT attribution
+
+- make `Stop` explicitly terminal for a runtime: `Start` on a runtime that has been stopped now returns an error instead of silently re-entering, while `Close` still only cycles terminal modes and may be followed by another `Start`;
+- reject a nil writer in `Renderer.WriteFrame` with an error instead of dereferencing it;
+- record the MIT license and the upstream Ink attribution for the derived portions in `LICENSE` and `THIRD_PARTY_NOTICES.md`, replacing the previous outstanding-clarification note;
+
 ## v0.1.13 — tree ownership, reentrant focus and input lifecycle
 
 - skip runtime keyboard default actions and the global paste callback when a node handler stops the runtime;
