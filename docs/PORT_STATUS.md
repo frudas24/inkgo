@@ -4,7 +4,7 @@
 
 The Go port is approximately **99% functionally equivalent for practical terminal-UI use**. Round 5 deliberately prioritized production behavior, packaging and maintainability over chasing implementation identity with JavaScript/React/Yoga internals.
 
-The project is stdlib-only, CGO-free, importable as `github.com/frudas24/inkgo`, and `v0.1.14` is publicly tagged. Development checkouts may contain additional `Unreleased` hardening.
+The project is stdlib-only, CGO-free, importable as `github.com/frudas24/inkgo`, and `v0.1.15` is publicly tagged. Development checkouts may contain additional `Unreleased` hardening.
 
 ## Closed in Round 5
 
@@ -18,7 +18,7 @@ The project is stdlib-only, CGO-free, importable as `github.com/frudas24/inkgo`,
 - bounded renderer scroll history across repeated root replacement;
 - focus-manager disabled traversal contract bug.
 
-## v0.1.7 through v0.1.14 hardening (post-v0.1.6)
+## v0.1.7 through v0.1.15 hardening (post-v0.1.6)
 
 `v0.1.7` replaces Windows console-size polling with native `ReadConsoleInputW` ownership inside `Runtime.Run`. Resize now arrives as `WINDOW_BUFFER_SIZE_EVENT`; key/mouse/focus records are preserved through the same input owner, and the blocking pump is stopped by a kernel event rather than a periodic timer.
 
@@ -36,6 +36,8 @@ The project is stdlib-only, CGO-free, importable as `github.com/frudas24/inkgo`,
 
 `v0.1.14` makes `Stop` explicitly terminal: starting a runtime that has been stopped now returns an error rather than silently re-entering, while `Close` still only cycles terminal modes and may be followed by another `Start`. `Renderer.WriteFrame` also rejects a nil writer with a typed error instead of dereferencing it, and `LICENSE`/`THIRD_PARTY_NOTICES.md` now record the MIT terms and the upstream Ink attribution for the derived portions.
 
+`v0.1.15` hardens the runtime lifecycle boundary. `Start` now fails when a configured terminal input cannot enter raw mode instead of publishing false terminal ownership, terminal cleanup is retryable after transient exit/raw/output-restore failures with the pending exit sequence retained, `SuspendTerminal` keeps incomplete cleanup instead of discarding it, terminal-query waiters resolve as soon as a query or sentinel write fails or short-writes, and `Close` resets incomplete parser and transient pointer state so a later `Start` begins from a clean epoch. Failures from `Close`, failed `Start` cleanup and the deferred cleanup in `Run` are joined and propagated rather than abandoned. A seventh permanent fuzz target, `FuzzRuntimeLifecycleInvariants`, drives `Start`/`Close`/`SuspendTerminal`/`ResumeTerminal`/`Stop` under transient output failures. The same release fixes a wrap width-invariant violation in trim mode where an orphaned variation selector could widen a row beyond its computed width.
+
 ## Deliberately remaining parity boundary
 
 The final ~1% is dominated by low-ROI edge identity rather than missing everyday capabilities:
@@ -49,4 +51,4 @@ No vendor should be added merely to erase this percentage. Add complexity only w
 
 ## Release boundary
 
-The latest published tag is `v0.1.14`. New changes should remain under `Unreleased` until the next validated tag is created. Repository description/topics are GitHub metadata and are not part of source archives. See `RELEASE.md`.
+The latest published tag is `v0.1.15`. New changes should remain under `Unreleased` until the next validated tag is created. Repository description/topics are GitHub metadata and are not part of source archives. See `RELEASE.md`.

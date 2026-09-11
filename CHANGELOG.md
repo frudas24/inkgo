@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.1.15 — runtime lifecycle hardening and a wrap trim fix
+
 - fix a wrap width-invariant violation in trim mode: the tokenizer splits a literal space away from the zero-width runes sharing its grapheme cluster, and dropping only the space left the orphan rune to re-attach to the preceding base, so a trailing VS16 on a variation base widened a row beyond the width the token accounting had produced; trimming a trailing space now drops its attached zero-width runes too, with the fuzz reproducer committed as a permanent seed;
 - fail `Runtime.Start` when a configured terminal input cannot enter raw mode instead of publishing false terminal ownership; `ResumeTerminal` now fails closed on the same boundary;
 - make terminal cleanup retryable after transient exit/raw/output-restore failures, preserving the exact pending exit sequence and completing old cleanup before a later `Start`/`ResumeTerminal` re-enters modes;
