@@ -251,6 +251,13 @@ func restoreVisualStateAcrossRows(rows []string) []string {
 	if len(rows) < 2 {
 		return rows
 	}
+	// An escape-free row cannot carry visual state, so reopening the inherited
+	// state and closing it again would change nothing - while re-tokenizing every
+	// row to discover that cost a full grapheme segmentation pass per row on the
+	// resize path, where a long transcript re-wraps every text node.
+	if !anyEscapeSequence(rows) {
+		return rows
+	}
 	state := sliceANSIState{}
 	out := make([]string, len(rows))
 	for i, row := range rows {
@@ -271,6 +278,15 @@ func restoreVisualStateAcrossRows(rows []string) []string {
 		out[i] = b.String()
 	}
 	return out
+}
+
+func anyEscapeSequence(rows []string) bool {
+	for _, row := range rows {
+		if strings.IndexByte(row, 0x1b) >= 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func tokensString(tokens []terminalToken) string {
