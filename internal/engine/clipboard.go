@@ -19,6 +19,23 @@ const (
 	ClipboardOSC52Path  ClipboardPath = "osc52"
 )
 
+// nativeClipboardCandidates lists the Linux utilities that can reach the local
+// clipboard, in preference order. On WSL the GOOS is still linux and none of the X11 or
+// Wayland tools exist, but the Windows utilities are on PATH: clip.exe is the system
+// clipboard and the PowerShell fallback reads stdin, so both write to the clipboard the
+// user is actually looking at. Run through runClipboardTool, whose stdin carries the
+// text, so neither needs argument quoting.
+var nativeClipboardCandidates = []struct {
+	name string
+	args []string
+}{
+	{"wl-copy", nil},
+	{"xclip", []string{"-selection", "clipboard"}},
+	{"xsel", []string{"--clipboard", "--input"}},
+	{"clip.exe", nil},
+	{"powershell.exe", []string{"-NoProfile", "-NonInteractive", "-Command", "Set-Clipboard -Value ([Console]::In.ReadToEnd())"}},
+}
+
 // GetClipboardPath reports the strongest clipboard path currently available.
 // It mirrors the fork's policy: native tools are never used across SSH.
 func GetClipboardPath() ClipboardPath {
@@ -27,8 +44,8 @@ func GetClipboardPath() ClipboardPath {
 		case "darwin", "windows":
 			return ClipboardNative
 		case "linux":
-			for _, tool := range []string{"wl-copy", "xclip", "xsel"} {
-				if _, err := exec.LookPath(tool); err == nil {
+			for _, candidate := range nativeClipboardCandidates {
+				if _, err := exec.LookPath(candidate.name); err == nil {
 					return ClipboardNative
 				}
 			}
@@ -66,10 +83,7 @@ func CopyNativeClipboard(ctx context.Context, text string) error {
 		return runClipboardTool(ctx, "clip.exe", nil, text)
 	case "linux":
 		var last error
-		for _, candidate := range []struct {
-			name string
-			args []string
-		}{{"wl-copy", nil}, {"xclip", []string{"-selection", "clipboard"}}, {"xsel", []string{"--clipboard", "--input"}}} {
+		for _, candidate := range nativeClipboardCandidates {
 			if err := runClipboardTool(ctx, candidate.name, candidate.args, text); err == nil {
 				return nil
 			} else {

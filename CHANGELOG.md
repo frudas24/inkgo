@@ -5,6 +5,13 @@
 - bound the two tab/wrap performance regressions by a deadline instead of checking elapsed time after the call returns: on the quadratic implementation they now fail within 30 s each with a clear diagnostic, where they previously blocked for roughly 75 minutes before reporting (or tripped a CI job timeout);
 - advance the release-checklist tag example to the next version, which had been left pointing at an already-published tag while the header named a newer one;
 
+## v0.1.18 — WSL clipboard bridge
+
+- the native clipboard path now reaches the Windows clipboard when running under WSL: `clip.exe` and a `powershell.exe` stdin fallback (`Set-Clipboard -Value ([Console]::In.ReadToEnd())`) are appended to the Linux candidate list, after `wl-copy`/`xclip`/`xsel` so a real X11/Wayland tool still wins;
+- the reported path matches the behaviour: with only the Windows utilities on PATH, `GetClipboardPath()` now answers `native` instead of falling back to OSC 52, which Windows Terminal may ignore - a copy used to report success while nothing reached the clipboard;
+- the native path stays refused across SSH, bridge included, so it never mutates the clipboard of the machine the user is sitting at;
+- both the text candidates and the detection share one list, so they cannot drift apart;
+
 ## v0.1.17 — linear tab expansion (wrap performance)
 
 - fix the quadratic cost of tab expansion: `ExpandTabs` segmented the rest of the plain span once per grapheme and kept only the first cluster, so a single long line was scanned once per grapheme. Measured on the validation host before the fix: 1 KB 65 ms, 8 KB 3.9 s, 32 KB 64 s, and 512 KB would have run for hours; after the fix the same inputs take 1.2 ms, 10.9 ms, 40 ms and 0.64 s, i.e. linear in the input size;

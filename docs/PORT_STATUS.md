@@ -4,7 +4,7 @@
 
 The Go port is approximately **99% functionally equivalent for practical terminal-UI use**. Round 5 deliberately prioritized production behavior, packaging and maintainability over chasing implementation identity with JavaScript/React/Yoga internals.
 
-The project is stdlib-only, CGO-free, importable as `github.com/frudas24/inkgo`, and `v0.1.17` is publicly tagged. Development checkouts may contain additional `Unreleased` hardening.
+The project is stdlib-only, CGO-free, importable as `github.com/frudas24/inkgo`, and `v0.1.18` is publicly tagged. Development checkouts may contain additional `Unreleased` hardening.
 
 ## Closed in Round 5
 
@@ -35,6 +35,8 @@ The project is stdlib-only, CGO-free, importable as `github.com/frudas24/inkgo`,
 `v0.1.13` closes ownership and lifecycle gaps the earlier audits left behind. Tree mutation snapshots incoming child lists before reparenting, so passing another node's `Children` slice no longer skips elements, and it rejects nil, duplicate and ancestor-cycle entries. Focus transitions publish state before callbacks and use a revision counter so a nested focus/blur supersedes the outer one, programmatic focus outside the managed tree or under a hidden ancestor is refused, and input no longer routes to a detached or hidden focused node. Expired-button render callbacks run before the renderer's history lock, which removes a real deadlock when a callback inspects the viewport or changes its size. A wide-cell write at the right edge is rejected before it clears the existing pair, truncation to one column preserves text that already fits, and a runtime stopped by a node handler no longer delivers the global paste callback. Coverage reached 82.2% with a sixth permanent fuzz target, `FuzzTreeMutationInvariants`, added to CI.
 
 `v0.1.14` makes `Stop` explicitly terminal: starting a runtime that has been stopped now returns an error rather than silently re-entering, while `Close` still only cycles terminal modes and may be followed by another `Start`. `Renderer.WriteFrame` also rejects a nil writer with a typed error instead of dereferencing it, and `LICENSE`/`THIRD_PARTY_NOTICES.md` now record the MIT terms and the upstream Ink attribution for the derived portions.
+
+`v0.1.18` adds the WSL clipboard bridge: `clip.exe` and a PowerShell stdin fallback join the Linux candidate list after the X11/Wayland tools, and `GetClipboardPath` reports `native` when only the Windows utilities exist. The native path remains refused across SSH.
 
 `v0.1.17` makes tab expansion linear: it segmented the remainder of each plain span once per grapheme, so wrapping a single long line cost O(n^2) (32 KB about 64 s before, 40 ms after). The visible output is unchanged (verified by a 20,000-input differential comparison against the previous implementation), and the affected fuzz target now completes a 60 s run where it previously killed the worker.
 
