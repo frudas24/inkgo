@@ -300,6 +300,7 @@ var (
 	ScrollDown                 = engine.ScrollDown
 	ScrollUp                   = engine.ScrollUp
 	SetClipboard               = engine.SetClipboard
+	SetClipboardSync           = engine.SetClipboardSync
 	SetScrollRegion            = engine.SetScrollRegion
 	SortedRects                = engine.SortedRects
 	Spacer                     = engine.Spacer

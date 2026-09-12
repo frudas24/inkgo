@@ -117,17 +117,45 @@ func TmuxLoadBuffer(ctx context.Context, text string) error {
 // SetClipboard performs the fork's best-effort clipboard policy and returns
 // the OSC-52 sequence that the caller should write to the terminal. Native
 // copy is attempted as a local safety net; tmux's buffer is loaded when
-// available. No third-party library or vendor code is required.
+// available. The native write runs in the background, so the returned path says
+// which route exists, not that it succeeded: a caller that reports success to
+// the user must use SetClipboardSync instead.
 func SetClipboard(text string) (sequence string, path ClipboardPath) {
+	sequence, path, _ = setClipboard(text, false)
+	return sequence, path
+}
+
+// SetClipboardSync is SetClipboard with the native write awaited, so a caller can
+// report what actually happened instead of assuming it. path is the route that was
+// taken:
+//
+//   - ClipboardNative: the native utility ran and succeeded, and nativeErr is nil;
+//   - ClipboardTmuxBuffer: tmux loaded the buffer and sequence is the passthrough;
+//   - ClipboardOSC52Path: sequence is the only route, which the terminal may ignore.
+//
+// nativeErr is non-nil when a native write was attempted and failed, or when no
+// native utility exists: exactly the case a caller must not describe as a copy that
+// reached the clipboard.
+func SetClipboardSync(text string) (sequence string, path ClipboardPath, nativeErr error) {
+	return setClipboard(text, true)
+}
+
+func setClipboard(text string, wait bool) (sequence string, path ClipboardPath, nativeErr error) {
 	b64 := base64.StdEncoding.EncodeToString([]byte(text))
 	raw := OSC(52, "c", b64)
 
+	native := GetClipboardPath() == ClipboardNative
 	if os.Getenv("SSH_CONNECTION") == "" {
-		go func() {
+		copyNative := func() error {
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
-			_ = CopyNativeClipboard(ctx, text)
-		}()
+			return CopyNativeClipboard(ctx, text)
+		}
+		if wait {
+			nativeErr = copyNative()
+		} else {
+			go func() { _ = copyNative() }()
+		}
 	}
 
 	if os.Getenv("TMUX") != "" {
@@ -136,11 +164,11 @@ func SetClipboard(text string) (sequence string, path ClipboardPath) {
 		cancel()
 		if err == nil {
 			payload := ESC + "]52;c;" + b64 + BEL
-			return ESC + "Ptmux;" + strings.ReplaceAll(payload, ESC, ESC+ESC) + ST, ClipboardTmuxBuffer
+			return ESC + "Ptmux;" + strings.ReplaceAll(payload, ESC, ESC+ESC) + ST, ClipboardTmuxBuffer, nativeErr
 		}
 	}
-	if GetClipboardPath() == ClipboardNative {
-		return raw, ClipboardNative
+	if native && nativeErr == nil {
+		return raw, ClipboardNative, nil
 	}
-	return raw, ClipboardOSC52Path
+	return raw, ClipboardOSC52Path, nativeErr
 }

@@ -5,6 +5,12 @@
 - bound the two tab/wrap performance regressions by a deadline instead of checking elapsed time after the call returns: on the quadratic implementation they now fail within 30 s each with a clear diagnostic, where they previously blocked for roughly 75 minutes before reporting (or tripped a CI job timeout);
 - advance the release-checklist tag example to the next version, which had been left pointing at an already-published tag while the header named a newer one;
 
+## v0.1.19 — synchronous clipboard result
+
+- `SetClipboardSync` awaits the native clipboard write and reports whether it happened. `SetClipboard`'s native write is fire-and-forget, so its returned path says which route *exists*, not that the text arrived: a caller that told the operator "copied" could be wrong, which is exactly what happened when a WSL bridge was added and the copy still did not reach the clipboard;
+- both share one implementation, so the routes cannot drift; `SetClipboard` keeps its previous behaviour for callers that only need the escape sequence;
+- found while reviewing a consumer of the new WSL bridge; the fix belongs here rather than in a patched copy of this module;
+
 ## v0.1.18 — WSL clipboard bridge
 
 - the native clipboard path now reaches the Windows clipboard when running under WSL: `clip.exe` and a `powershell.exe` stdin fallback (`Set-Clipboard -Value ([Console]::In.ReadToEnd())`) are appended to the Linux candidate list, after `wl-copy`/`xclip`/`xsel` so a real X11/Wayland tool still wins;

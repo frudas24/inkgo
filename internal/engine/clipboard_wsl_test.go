@@ -86,3 +86,55 @@ func TestNativeClipboardRefusesAcrossSSHIncludingTheBridge(t *testing.T) {
 		t.Fatal("the native clipboard must stay refused across SSH")
 	}
 }
+
+// SetClipboard is fire-and-forget: it reports which route exists, not that the write
+// succeeded, so a caller could announce a copy that never reached the clipboard.
+// SetClipboardSync is the contract for callers that must tell the truth.
+func TestSetClipboardSyncReportsWhetherTheNativeWriteSucceeded(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("this drives the linux candidate list")
+	}
+	t.Setenv("SSH_CONNECTION", "")
+	t.Setenv("TMUX", "")
+
+	// A bridge that fails, with a PATH holding nothing else, leaves the linux branch
+	// without a working native utility.
+	dir := t.TempDir()
+	bridge := filepath.Join(dir, "clip.exe")
+	if err := os.WriteFile(bridge, []byte("#!/bin/sh\nexit 9\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+
+	sequence, path, err := SetClipboardSync("x")
+	if err == nil {
+		t.Fatal("a failing native utility must be reported, not swallowed")
+	}
+	if path != ClipboardOSC52Path {
+		t.Fatalf("path = %q, want %q: a failed native route must not be reported as native", path, ClipboardOSC52Path)
+	}
+	if sequence == "" {
+		t.Fatal("the OSC 52 sequence is the only route left and must be returned")
+	}
+
+	// A working bridge is confirmed, so a caller may claim the system clipboard.
+	// Builtins only: the test pins PATH to the temp dir, so a script calling cat would fail.
+	if err := os.WriteFile(bridge, []byte("#!/bin/sh\nwhile read -r line; do :; done\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sequence, path, err = SetClipboardSync("x")
+	if err != nil {
+		t.Fatalf("a working native utility must not report an error: %v", err)
+	}
+	if path != ClipboardNative {
+		t.Fatalf("path = %q, want %q", path, ClipboardNative)
+	}
+	if sequence == "" {
+		t.Fatal("the fallback sequence must still be returned")
+	}
+
+	// SetClipboard keeps its fire-and-forget contract: the path is the route that exists.
+	if seq, got := SetClipboard("x"); seq == "" || got != ClipboardNative {
+		t.Fatalf("SetClipboard = %q %q, want a sequence and %q", seq, got, ClipboardNative)
+	}
+}
