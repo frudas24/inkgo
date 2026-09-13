@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.1.21 — managed selection and one clipboard policy
+
+- `Runtime.CopySelectionOnRelease` copies a completed drag through the clipboard policy without clearing the visual selection. It is opt-in and defaults to the previous behaviour, and it is what lets an application keep mouse reporting enabled - and therefore keep wheel and click input - while a drag still reaches the clipboard on terminals whose native selection mouse reporting has disabled. `TestCopySelectionOnReleasePreservesSelectionAndWritesClipboard` pins both the clipboard write and the retained highlight, and `CopySelection` remains the path a key binding can call;
+- the Windows/WSL write now encodes UTF-16LE for `clip.exe` instead of piping UTF-8, which `clip.exe` could accept while corrupting non-ASCII characters, and the PowerShell fallback reads stdin as UTF-8 with `$ErrorActionPreference='Stop'` instead of relying on the console default. The Linux candidate order (`wl-copy`/`xclip`/`xsel` first, Windows bridge last) and the SSH refusal are unchanged, so `TestNativeClipboardUsesTheWindowsBridgeOnWSL`, `TestNativeClipboardPrefersTheLocalToolOverTheBridge` and `TestNativeClipboardRefusesAcrossSSHIncludingTheBridge` keep their contract;
+- a selection that crosses physical rows no longer picks up a no-select pane's cells, and `TestNoSelectPaneIsExcludedFromCrossRowSelection` pins the cross-row boundary that a multiline copy depends on;
+
 ## v0.1.20 — resize re-wrap performance
 
 - stop re-tokenizing escape-free rows: `restoreVisualStateAcrossRows` reopened and closed the inherited terminal state of every wrapped row, which required a full grapheme segmentation pass per row even when no row contained an escape sequence. Rows without ESC cannot carry visual state, so the pass now returns them untouched. Measured on a 200-entry transcript (1024 bytes per entry, 120x40, one width step): 398.8-404.6 ms per resize before, 52.7-55.3 ms after;
