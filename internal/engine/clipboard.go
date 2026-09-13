@@ -1,14 +1,18 @@
 package engine
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/binary"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"runtime"
 	"strings"
 	"time"
+	"unicode/utf16"
 )
 
 type ClipboardPath string
@@ -33,7 +37,7 @@ var nativeClipboardCandidates = []struct {
 	{"xclip", []string{"-selection", "clipboard"}},
 	{"xsel", []string{"--clipboard", "--input"}},
 	{"clip.exe", nil},
-	{"powershell.exe", []string{"-NoProfile", "-NonInteractive", "-Command", "Set-Clipboard -Value ([Console]::In.ReadToEnd())"}},
+	{"powershell.exe", []string{"-NoProfile", "-NonInteractive", "-Command", "$ErrorActionPreference='Stop'; [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false); Set-Clipboard -Value ([Console]::In.ReadToEnd())"}},
 }
 
 // GetClipboardPath reports the strongest clipboard path currently available.
@@ -58,13 +62,30 @@ func GetClipboardPath() ClipboardPath {
 }
 
 func runClipboardTool(ctx context.Context, name string, args []string, text string) error {
+	return runClipboardToolReader(ctx, name, args, strings.NewReader(text))
+}
+
+func runClipboardToolReader(ctx context.Context, name string, args []string, stdin io.Reader) error {
 	path, err := exec.LookPath(name)
 	if err != nil {
 		return err
 	}
 	cmd := exec.CommandContext(ctx, path, args...)
-	cmd.Stdin = strings.NewReader(text)
+	cmd.Stdin = stdin
 	return cmd.Run()
+}
+
+func windowsClipboardBytes(text string) []byte {
+	units := utf16.Encode([]rune(text))
+	data := make([]byte, 2*len(units))
+	for i, u := range units {
+		binary.LittleEndian.PutUint16(data[2*i:], u)
+	}
+	return data
+}
+
+func runWindowsClip(ctx context.Context, text string) error {
+	return runClipboardToolReader(ctx, "clip.exe", nil, bytes.NewReader(windowsClipboardBytes(text)))
 }
 
 // CopyNativeClipboard writes to a local OS clipboard utility. It refuses to
@@ -80,15 +101,20 @@ func CopyNativeClipboard(ctx context.Context, text string) error {
 	case "darwin":
 		return runClipboardTool(ctx, "pbcopy", nil, text)
 	case "windows":
-		return runClipboardTool(ctx, "clip.exe", nil, text)
+		return runWindowsClip(ctx, text)
 	case "linux":
 		var last error
 		for _, candidate := range nativeClipboardCandidates {
-			if err := runClipboardTool(ctx, candidate.name, candidate.args, text); err == nil {
-				return nil
+			var err error
+			if candidate.name == "clip.exe" {
+				err = runWindowsClip(ctx, text)
 			} else {
-				last = err
+				err = runClipboardTool(ctx, candidate.name, candidate.args, text)
 			}
+			if err == nil {
+				return nil
+			}
+			last = err
 		}
 		if last != nil {
 			return last

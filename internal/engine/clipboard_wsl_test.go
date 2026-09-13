@@ -31,7 +31,7 @@ func TestNativeClipboardUsesTheWindowsBridgeOnWSL(t *testing.T) {
 	if got := GetClipboardPath(); got != ClipboardNative {
 		t.Fatalf("clip.exe on PATH must select the native path, got %q", got)
 	}
-	const text = "hola desde WSL"
+	const text = "hola ñ🙂 desde WSL"
 	if err := CopyNativeClipboard(context.Background(), text); err != nil {
 		t.Fatalf("copy via clip.exe: %v", err)
 	}
@@ -39,8 +39,9 @@ func TestNativeClipboardUsesTheWindowsBridgeOnWSL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("clip.exe did not receive the text: %v", err)
 	}
-	if string(data) != text {
-		t.Fatalf("clipboard got %q, want %q", data, text)
+	want := windowsClipboardBytes(text)
+	if string(data) != string(want) {
+		t.Fatalf("clip.exe stdin = %x, want UTF-16LE %x", data, want)
 	}
 }
 

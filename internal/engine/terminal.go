@@ -92,10 +92,16 @@ type Runtime struct {
 
 	OnSelection       func(string)
 	OnSelectionChange func(*Selection)
-	OnPaste           func(string)
-	OnTerminalFocus   func(bool)
-	OnResponse        func(TerminalResponse)
-	OnHyperlink       func(string)
+	// CopySelectionOnRelease mirrors GUI selection ergonomics while terminal
+	// mouse reporting is enabled: a completed InkGo drag is copied through the
+	// clipboard policy without clearing the visual selection. This lets an app
+	// keep wheel/click input and still make Ctrl+Shift+C/right-click Copy useful
+	// on terminals whose native selection is disabled by mouse reporting.
+	CopySelectionOnRelease bool
+	OnPaste                func(string)
+	OnTerminalFocus        func(bool)
+	OnResponse             func(TerminalResponse)
+	OnHyperlink            func(string)
 
 	MouseClicksDisabled bool
 	MultiClickTimeout   time.Duration
@@ -754,10 +760,8 @@ func (rt *Runtime) handleLeftRelease(p Point) {
 	}
 	rt.press = mousePressState{}
 	rt.notifySelection()
-	if wasDragging && rt.Selection.HasSelection() && rt.OnSelection != nil {
-		if screen := rt.selectionScreen(); screen != nil {
-			rt.OnSelection(rt.Selection.Text(screen))
-		}
+	if wasDragging {
+		rt.selectionCompleted()
 	}
 }
 
@@ -768,7 +772,20 @@ func (rt *Runtime) finishSelection() {
 	rt.Selection.Finish()
 	rt.press = mousePressState{}
 	rt.notifySelection()
-	if rt.Selection.HasSelection() && rt.OnSelection != nil {
+	rt.selectionCompleted()
+}
+
+func (rt *Runtime) selectionCompleted() {
+	if rt == nil || rt.Selection == nil || !rt.Selection.HasSelection() {
+		return
+	}
+	// Copy before invoking the callback so a callback that mutates the tree cannot
+	// change the screen snapshot from which the selected text was derived. The
+	// legacy callback remains notification-only and keeps its exact text contract.
+	if rt.CopySelectionOnRelease {
+		_, _, _ = rt.CopySelection(false)
+	}
+	if rt.OnSelection != nil {
 		if screen := rt.selectionScreen(); screen != nil {
 			rt.OnSelection(rt.Selection.Text(screen))
 		}
