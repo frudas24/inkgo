@@ -713,16 +713,27 @@ func cachedWrappedText(n *Node, width int) ([]string, []bool, [][]Grapheme) {
 	return lines, soft, clusters
 }
 
-func cachedParsedANSI(n *Node, base TextStyle) []StyledGrapheme {
+// cachedParsedANSIRows parses the word-wrapped rows of a RawANSI node, so the
+// paint pass consumes exactly the rows the layout measured it with. The rows
+// come from cachedWrappedText, the same producer MeasureText measures. Parsing
+// one row at a time is enough to keep style and hyperlinks alive across rows:
+// the wrap pass re-opens the inherited SGR/hyperlink state at the start of
+// every continuation row.
+func cachedParsedANSIRows(n *Node, base TextStyle, width int) ([][]StyledGrapheme, []string, []bool) {
 	if n == nil {
-		return nil
+		return nil, nil, nil
 	}
-	if c := &n.ansiCache; c.valid && c.text == n.Text && c.base == base {
-		return c.items
+	mode := n.Style.TextWrap
+	if c := &n.ansiCache; c.valid && c.text == n.Text && c.width == width && c.mode == mode && c.base == base {
+		return c.rows, c.lines, c.soft
 	}
-	items := ParseANSI(n.Text, base)
-	n.ansiCache = nodeANSICache{valid: true, text: n.Text, base: base, items: items}
-	return items
+	lines, soft, _ := cachedWrappedText(n, width)
+	rows := make([][]StyledGrapheme, len(lines))
+	for i, line := range lines {
+		rows[i] = ReorderBidiStyled(ParseANSI(line, base))
+	}
+	n.ansiCache = nodeANSICache{valid: true, text: n.Text, width: width, mode: mode, base: base, lines: lines, rows: rows, soft: soft}
+	return rows, lines, soft
 }
 
 func paintText(screen *Screen, n *Node, r, clip Rect, style TextStyle, href string) {
@@ -731,7 +742,7 @@ func paintText(screen *Screen, n *Node, r, clip Rect, style TextStyle, href stri
 		return
 	}
 	if n.Kind == NodeRawANSI {
-		paintANSILines(screen, n, r, clip, style, href, n.Style.TextWrap)
+		paintANSILines(screen, n, r, clip, style, href)
 		return
 	}
 	lines, soft, clusters := cachedWrappedText(n, width)
@@ -759,49 +770,41 @@ func paintText(screen *Screen, n *Node, r, clip Rect, style TextStyle, href stri
 	}
 }
 
-func paintANSILines(screen *Screen, n *Node, r, clip Rect, base TextStyle, baseHref string, mode TextWrap) {
-	// Preserve style/hyperlink while wrapping by cells rather than stripping ANSI.
-	parsed := cachedParsedANSI(n, base)
-	parsed = ReorderBidiStyled(parsed)
-	x, y := r.X, r.Y
-	href := baseHref
-	for _, g := range parsed {
-		if g.Value == "\n" {
-			x = r.X
-			y++
-			if y >= r.Y+r.Height {
-				return
-			}
-			continue
-		}
-		if href == "" {
-			href = g.Hyperlink
-		}
-		if x+g.Width > r.X+r.Width {
-			if mode == TextWrapTruncate || mode == TextWrapTruncateEnd || mode == TextWrapTruncateMiddle || mode == TextWrapTruncateStart {
-				return
-			}
-			previousEnd := x
-			x = r.X
-			y++
-			if y >= r.Y+r.Height {
-				return
-			}
-			if y >= 0 && y < screen.Height {
-				screen.SoftWrap[y] = true
-				if y < len(screen.SoftWrapEnd) {
-					screen.SoftWrapEnd[y] = min(screen.Width, previousEnd)
-				}
+// paintANSILines paints a RawANSI node row for row from the word-wrap producer
+// the layout measured it with. It used to advance cell by cell and break at the
+// first grapheme that did not fit, which disagreed with that measurement: the
+// paint pass emitted rows the layout never granted and sliced a word at the
+// column edge, so the tail of a long word was cut on resize. The wrap producer
+// owns the row breaks in every mode, including truncate, so paint only has to
+// place each produced row.
+func paintANSILines(screen *Screen, n *Node, r, clip Rect, base TextStyle, baseHref string) {
+	if r.Width <= 0 {
+		return
+	}
+	rows, lines, soft := cachedParsedANSIRows(n, base, r.Width)
+	y := r.Y
+	for lineIndex := range rows {
+		if y >= 0 && y < screen.Height && lineIndex < len(soft) && soft[lineIndex] {
+			screen.SoftWrap[y] = true
+			if lineIndex > 0 && y < len(screen.SoftWrapEnd) {
+				screen.SoftWrapEnd[y] = min(screen.Width, r.X+StringWidth(lines[lineIndex-1]))
 			}
 		}
-		gh := g.Hyperlink
-		if gh == "" {
-			gh = baseHref
+		x := r.X
+		for _, g := range rows[lineIndex] {
+			href := g.Hyperlink
+			if href == "" {
+				href = baseHref
+			}
+			if g.Width > 0 && x+g.Width <= r.X+r.Width && clip.Contains(Point{X: x, Y: y}) {
+				screen.SetCell(x, y, g.Value, g.Width, g.Style, href)
+			}
+			x += g.Width
 		}
-		if g.Width > 0 && clip.Contains(Point{X: x, Y: y}) {
-			screen.SetCell(x, y, g.Value, g.Width, g.Style, gh)
+		y++
+		if y >= r.Y+r.Height {
+			return
 		}
-		x += g.Width
 	}
 }
 

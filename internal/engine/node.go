@@ -63,8 +63,12 @@ type nodeWrapCache struct {
 type nodeANSICache struct {
 	valid bool
 	text  string
+	width int
+	mode  TextWrap
 	base  TextStyle
-	items []StyledGrapheme
+	lines []string
+	rows  [][]StyledGrapheme
+	soft  []bool
 }
 
 // Node is the Go-native host node replacing React's Fiber host tree.

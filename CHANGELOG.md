@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.1.22 — word-boundary wrapping in paint
+
+- `RawANSI` paint advanced cell by cell and broke at the first grapheme that did not fit, so it disagreed with the wrap producer the layout had measured the node with: it emitted rows the layout never granted and sliced a word at the column edge, cutting the tail of a long word on resize. Paint now consumes the same `cachedWrappedText` rows `MeasureText` measures with, so a resize moves the whole word to the next row, and the soft-wrap markers come from the produced lines rather than from where paint happened to break. `TestRawANSIWrapBreaksBetweenWords` pins the boundary case;
+- the ANSI parse cache is keyed by width and wrap mode for the same reason: the same text at a different width is a different layout, not a cache hit;
+
 ## v0.1.21 — managed selection and one clipboard policy
 
 - `Runtime.CopySelectionOnRelease` copies a completed drag through the clipboard policy without clearing the visual selection. It is opt-in and defaults to the previous behaviour, and it is what lets an application keep mouse reporting enabled - and therefore keep wheel and click input - while a drag still reaches the clipboard on terminals whose native selection mouse reporting has disabled. `TestCopySelectionOnReleasePreservesSelectionAndWritesClipboard` pins both the clipboard write and the retained highlight, and `CopySelection` remains the path a key binding can call;
