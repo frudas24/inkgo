@@ -1,6 +1,6 @@
 # API stability
 
-The latest published tag is `v0.1.22`. A development checkout may contain additional changes recorded under `Unreleased`.
+The latest published tag is `v0.1.23`. A development checkout may contain additional changes recorded under `Unreleased`.
 
 ## Public surface
 

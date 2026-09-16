@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.1.23 — fullscreen recovery after focus and idle
 
 - Repaint unchanged fullscreen content after terminal focus returns or input resumes after the configured idle gap. This repairs stale cells after screen locks, overlays and window restoration without re-entering the alternate screen; normal frames still use incremental rendering. Inline output retains its relative cursor anchor and is not reprinted on focus recovery.
 
