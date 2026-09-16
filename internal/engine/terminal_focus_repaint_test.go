@@ -63,3 +63,28 @@ func TestInputAfterIdleGapRepaintsWithoutFocusNotification(t *testing.T) {
 		t.Fatal("idle recovery re-entered alternate screen")
 	}
 }
+
+func TestFocusAndIdleRecoveryPreserveInlineRenderAnchor(t *testing.T) {
+	for _, idle := range []bool{false, true} {
+		var out bytes.Buffer
+		rt := NewRuntime(Root(Text("inline first\ninline last")), strings.NewReader(""), &out, RenderOptions{Width: 40, Height: 8})
+		if err := rt.Start(); err != nil {
+			t.Fatal(err)
+		}
+		out.Reset()
+		if idle {
+			rt.lastInputTime = time.Now().Add(-2 * rt.ReassertAfter)
+			rt.HandleInput([]byte("x"))
+		} else {
+			rt.HandleInput([]byte(FocusOut + FocusIn))
+		}
+		frame, err := rt.Render()
+		rt.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if frame.Patch != "" {
+			t.Fatalf("idle=%v: inline recovery reprinted content without its original cursor anchor: %q", idle, frame.Patch)
+		}
+	}
+}

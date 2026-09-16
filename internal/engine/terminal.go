@@ -405,7 +405,7 @@ func (rt *Runtime) HandleInput(data []byte) []ParsedInput {
 		rt.ReassertTerminalModes(false)
 		// Hosts can lose cells during an idle lock/restore without sending
 		// focus or resize notifications. Restore the frame as well as modes.
-		if rt.Renderer != nil {
+		if rt.Renderer != nil && rt.Renderer.fullscreen(rt.Root) {
 			rt.Renderer.Invalidate()
 		}
 	}
@@ -596,7 +596,7 @@ func (rt *Runtime) dispatch(in ParsedInput) {
 			// The emulator may have discarded or reflowed cells while hidden
 			// (screen lock, keyboard overlay, window restore) without changing
 			// its reported size. Repaint once, without re-entering mode 1049.
-			if rt.Renderer != nil {
+			if rt.Renderer != nil && rt.Renderer.fullscreen(rt.Root) {
 				rt.Renderer.Invalidate()
 			}
 			if rt.OnTerminalFocus != nil {

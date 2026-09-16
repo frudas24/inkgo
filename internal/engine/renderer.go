@@ -932,3 +932,11 @@ func hasMouseTracking(root *Node) bool {
 	}
 	return found
 }
+
+// fullscreen reports whether cursor-addressed recovery is safe. Inline output
+// needs its previous frame to retain the relative cursor anchor.
+func (r *Renderer) fullscreen(root *Node) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.options.Fullscreen || hasAlternateScreen(root)
+}
