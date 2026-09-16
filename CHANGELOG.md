@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Repaint unchanged content after terminal focus returns or input resumes after the configured idle gap. This repairs stale cells after screen locks, overlays and window restoration without re-entering the alternate screen; normal frames still use incremental rendering.
+
 ## v0.1.22 — word-boundary wrapping in paint
 
 - `RawANSI` paint advanced cell by cell and broke at the first grapheme that did not fit, so it disagreed with the wrap producer the layout had measured the node with: it emitted rows the layout never granted and sliced a word at the column edge, cutting the tail of a long word on resize. Paint now consumes the same `cachedWrappedText` rows `MeasureText` measures with, so a resize moves the whole word to the next row, and the soft-wrap markers come from the produced lines rather than from where paint happened to break. `TestRawANSIWrapBreaksBetweenWords` pins the boundary case;
