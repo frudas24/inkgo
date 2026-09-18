@@ -50,6 +50,89 @@ type nodeMeasureCache struct {
 	result         measured
 }
 
+// nodeFlowMeasure is one memoised intrinsic measurement of a container node.
+//
+// measureNode reads only the node kind, its own style (with the defaults
+// applied) and its children subtree for a Box/ScrollBox/Root, so for a given
+// available space the result is fixed for as long as nothing inside the subtree
+// (or the style of the node) changed. The entry therefore stores no style of its
+// own: the style every entry was measured under is kept once in nodeFlowCache,
+// because a style change can change the measurement under any available space
+// and must drop them all.
+type nodeFlowMeasure struct {
+	// epoch is Node.measureEpoch at the time the entry was written. A mutation
+	// anywhere in the subtree bumps it, which is what makes an entry written
+	// before that mutation unusable.
+	epoch          uint64
+	availW, availH int
+	result         measured
+}
+
+// nodeFlowMeasureSlots bounds how many available spaces one container memoises.
+//
+// The flex path measures a child at most twice per pass - once as a flex item
+// under the space its parent offers and once again under the main size it was
+// actually allocated - and once per ancestor level above that, so the number of
+// distinct keys a node sees grows with how deeply it is nested. Measured with
+// TestFlowMeasureCacheKeySetIsBounded: 2 keys per container in the transcript
+// shapes of the PERF-001 benchmarks and in a deep transcript shape, 5 in a deeply
+// nested auto-sized tree. The table is sized above that with room for deeper
+// trees, and going over it stays correct either way: the lookup compares
+// (epoch, availW, availH) exactly, so a missed key costs a recompute, never a
+// wrong result. Eviction is oldest-first, which keeps the keys a pass uses.
+const nodeFlowMeasureSlots = 8
+
+// nodeFlowCache memoises the intrinsic measurements of one container node.
+//
+// An entry is only usable while none of the node's inputs changed since it was
+// written: measureNode checks the node's measureEpoch, which MarkDirty bumps on
+// the mutated node and on every ancestor, and the style/kind snapshot below.
+// The cache is allocated lazily and at most once per node: text nodes and
+// containers that are never measured as containers never pay for it.
+type nodeFlowCache struct {
+	kind  NodeKind
+	style Style
+	// next is the slot a full cache overwrites; entries are replaced oldest
+	// first, which is enough for the one or two keys a pass uses.
+	next  uint8
+	count uint8
+	// entries is a fixed array, not a slice: the cache lives inside Node and a
+	// slice header per slot would allocate on every miss.
+	entries [nodeFlowMeasureSlots]nodeFlowMeasure
+}
+
+// lookup returns the memoised measurement of one available space for one measure
+// epoch. Only an exact match of all three is served. c must be non-nil (the
+// caller allocates the cache before looking anything up).
+func (c *nodeFlowCache) lookup(epoch uint64, availW, availH int) (measured, bool) {
+	for i := 0; i < int(c.count); i++ {
+		e := &c.entries[i]
+		if e.epoch == epoch && e.availW == availW && e.availH == availH {
+			return e.result, true
+		}
+	}
+	return measured{}, false
+}
+
+// store records one measurement, evicting the oldest entry once the cache is
+// full.
+func (c *nodeFlowCache) store(epoch uint64, availW, availH int, result measured) {
+	entry := nodeFlowMeasure{epoch: epoch, availW: availW, availH: availH, result: result}
+	if int(c.count) < len(c.entries) {
+		c.entries[c.count] = entry
+		c.count++
+		return
+	}
+	c.entries[c.next] = entry
+	c.next = (c.next + 1) % uint8(len(c.entries))
+}
+
+// rebind points the cache at a different kind or style, dropping every entry:
+// they were all measured under inputs the node no longer has.
+func (c *nodeFlowCache) rebind(kind NodeKind, style Style) {
+	c.kind, c.style, c.count, c.next = kind, style, 0, 0
+}
+
 type nodeWrapCache struct {
 	valid     bool
 	text      string
@@ -116,6 +199,10 @@ type Node struct {
 	measureCache nodeMeasureCache
 	wrapCache    nodeWrapCache
 	ansiCache    nodeANSICache
+	// flowCache memoises the intrinsic measurements of a container node. It is
+	// nil until the node is measured as a container; its entries are invalidated
+	// by measureEpoch (see nodeFlowCache).
+	flowCache *nodeFlowCache
 
 	dirty       bool
 	layoutDirty bool
@@ -127,6 +214,17 @@ type Node struct {
 	// clean subtree can be pruned without re-measuring it. markPaintDirty
 	// deliberately leaves it alone: paint-only changes never move geometry.
 	subtreeGeomDirty bool
+	// measureEpoch counts the geometry mutations this node or its subtree has
+	// seen. MarkDirty bumps it on the mutated node and on every ancestor, so an
+	// intrinsic measurement memoised at an older epoch can never be served: the
+	// measurement is a pure function of (kind, style, subtree content), and this
+	// counter is the cheapest sound witness that none of the three changed.
+	//
+	// It is deliberately not Node.generation: that counter only bumps on an
+	// ancestor that was clean, which is enough for the renderer but not for a
+	// cache that has to notice a second mutation while the first is still
+	// unvisited.
+	measureEpoch uint64
 	// layoutStamp is the layout pass that last visited this node. ComputeLayout
 	// uses it to find the nodes a pruned subtree skipped (see drainScroll).
 	layoutStamp uint64
@@ -405,6 +503,11 @@ func (n *Node) removeChild(child *Node) {
 
 func (n *Node) Remove(child *Node) { n.removeChild(child) }
 
+// invalidateTextCaches drops every measurement cache the node owns. It is called
+// by the setters that change what this node measures: its text and its style.
+// The caches of the ancestors are not touched here on purpose - MarkDirty, which
+// those setters also call, bumps the measure epoch of the whole ancestor chain,
+// and measureNode serves a container entry only while that epoch still matches.
 func (n *Node) invalidateTextCaches() {
 	if n == nil {
 		return
@@ -412,6 +515,7 @@ func (n *Node) invalidateTextCaches() {
 	n.measureCache = nodeMeasureCache{}
 	n.wrapCache = nodeWrapCache{}
 	n.ansiCache = nodeANSICache{}
+	n.flowCache = nil
 }
 
 func (n *Node) SetText(text string) {
@@ -446,7 +550,8 @@ func (n *Node) SetHandlers(h EventHandlers) {
 // MarkDirty invalidates geometry. Callers use it for every mutation that can
 // move a rect (text, style, children, button state), so it also marks the whole
 // ancestor chain as holding a geometrically dirty subtree, which is what lets
-// ComputeLayout prune unchanged siblings.
+// ComputeLayout prune unchanged siblings and what lets measureNode drop the
+// intrinsic measurements an ancestor memoised before this mutation.
 func (n *Node) MarkDirty() {
 	for cur := n; cur != nil; cur = cur.Parent {
 		if cur == n || !cur.dirty {
@@ -455,6 +560,7 @@ func (n *Node) MarkDirty() {
 		cur.dirty = true
 		cur.layoutDirty = true
 		cur.subtreeGeomDirty = true
+		cur.measureEpoch++
 	}
 }
 

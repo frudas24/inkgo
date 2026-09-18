@@ -47,6 +47,12 @@ func applyMinMax(v int, minL, maxL Length, parent int) int {
 	return max(0, v)
 }
 
+// measureNodeProbe, when non-nil, observes every node measureNode walks, with
+// the available space it was measured under. It exists for the tests that have
+// to prove a memoised container does not re-walk its subtree; production leaves
+// it nil, so the call is a predictable branch on a package variable.
+var measureNodeProbe func(n *Node, availW, availH int)
+
 func nodeText(n *Node) string {
 	if n.Kind == NodeRawANSI {
 		return StripANSI(n.Text)
@@ -55,6 +61,9 @@ func nodeText(n *Node) string {
 }
 
 func measureNode(n *Node, availW, availH int) measured {
+	if measureNodeProbe != nil {
+		measureNodeProbe(n, availW, availH)
+	}
 	if n == nil || n.Style.Display == DisplayNone {
 		return measured{}
 	}
@@ -104,6 +113,39 @@ func measureNode(n *Node, availW, availH int) measured {
 		return result
 	}
 
+	// Container measurement memoisation.
+	//
+	// Everything below (the children filter, measureFlowContent, measureItem and
+	// the box model arithmetic) reads only n.Kind, the style defaults applied
+	// above and the children subtree; the node's own Rect, ContentRect and scroll
+	// state are never read by this function nor by anything it calls, so for a
+	// fixed available space the result is a pure function of (kind, style,
+	// subtree content). Without this, a single leaf text update re-measured every
+	// ancestor container through its whole subtree, because the parent's flex
+	// pass measures all of its children before the incremental prune in
+	// layoutNode can skip any of them.
+	//
+	// The entries are keyed on the exact available space plus the measure epoch
+	// MarkDirty bumps on the mutated node and every ancestor, so an entry is
+	// served only while no input of the measurement changed since it was written.
+	// Gating on Node.subtreeGeomDirty instead would be unsound: a layout pass
+	// clears that flag whenever it visits the node, and the root is not measured
+	// in fullscreen mode, so a mutation followed by a fullscreen pass would clear
+	// the flag and leave a stale root entry behind for the next natural-height
+	// pass (reproduced by TestFlowMeasureCacheRootMeasuredOnlyOutsideFullscreen).
+	// Paint-only mutations (SetTextStyle, scrolling) bump neither, and cannot
+	// change a measurement.
+	c := n.flowCache
+	if c == nil {
+		c = &nodeFlowCache{}
+		n.flowCache = c
+	}
+	if c.kind != n.Kind || c.style != s {
+		c.rebind(n.Kind, s)
+	} else if result, ok := c.lookup(n.measureEpoch, availW, availH); ok {
+		return result
+	}
+
 	flow := make([]*Node, 0, len(n.Children))
 	for _, c := range n.Children {
 		if c != nil && c.Style.Display != DisplayNone && c.Style.Position != PositionAbsolute {
@@ -127,7 +169,9 @@ func measureNode(n *Node, availW, availH int) measured {
 	}
 	w = applyMinMax(w, s.MinWidth, s.MaxWidth, availW)
 	h = applyMinMax(h, s.MinHeight, s.MaxHeight, availH)
-	return measured{w, h}
+	result := measured{w, h}
+	c.store(n.measureEpoch, availW, availH, result)
+	return result
 }
 
 // measureFlowContent performs the intrinsic measurement pass for flex

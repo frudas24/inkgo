@@ -995,6 +995,7 @@ func TestIncrementalLayoutProperty(t *testing.T) {
 	t.Run("mutation-inside-previously-pruned-subtree", func(t *testing.T) { ilpPrunedSubtreeCase(t) })
 	t.Run("scroll-requests-through-pruned-branches", func(t *testing.T) { ilpPrunedScrollCase(t) })
 	t.Run("drain-skips-unreachable-scroll-nodes", func(t *testing.T) { ilpUnreachableScrollCase(t) })
+	t.Run("auto-sized-tree-random-mutations", func(t *testing.T) { ilpAutoRandomCase(t) })
 }
 
 // ilpForceConservativePass lays the tree out with pruning disabled: every node
@@ -1168,7 +1169,241 @@ func ilpPrunedScrollCase(t *testing.T) {
 	}
 }
 
-// ilpUnreachableScrollCase pins the boundary of drainSkippedScroll: it may only
+// ilpAutoTree is the second property-test shape: a deep, fully auto-sized
+// chain plus one fixed-size sibling.
+//
+// Its point is the intrinsic measurement of containers. Every ancestor of the
+// leaf derives its size from it (nothing in the chain sets Width/Height), so a
+// leaf mutation has to move the measurement of every box above it, while the
+// fixed sibling gives the pass something it can legitimately prune. That is the
+// combination the container measurement memoisation (nodeFlowCache) has to get
+// right: a stale memoised measurement of any ancestor shows up as a divergent
+// rect, and a memoisation that is dropped too eagerly only costs time.
+type ilpAutoTree struct {
+	root, outer, mid, inner, fixed, leaf, spare *Node
+}
+
+// ilpAutoBuild assembles the shape. Every call returns an independent,
+// structurally identical tree, so a mutation sequence can be replayed on a twin
+// built from scratch.
+func ilpAutoBuild() *ilpAutoTree {
+	leaf := Text("row one")
+	inner := Box(Style{FlexDirection: Column},
+		leaf,
+		Text("row two with a payload that wraps over two rows here"),
+	)
+	mid := Box(Style{FlexDirection: Row, Padding: I(1)}, inner, Text("tail"))
+	fixed := Box(Style{FlexDirection: Column, Width: Cells(10), Height: Cells(3)},
+		Text("fixed body"), Text("fixed foot"))
+	outer := Box(Style{FlexDirection: Column}, mid, fixed)
+	root := Root(outer)
+	return &ilpAutoTree{
+		root: root, outer: outer, mid: mid, inner: inner,
+		fixed: fixed, leaf: leaf, spare: Text("spare row"),
+	}
+}
+
+// ilpAutoOp is one deterministic mutation of the auto-sized tree. It carries no
+// RNG state: replaying the same op on a structurally identical tree produces the
+// same state, which is what lets the case rebuild the twin from the op log.
+type ilpAutoOp struct {
+	name  string
+	apply func(*ilpAutoTree)
+}
+
+// ilpAutoOps is the mutation table. It covers every input measureNode reads for
+// a container: the subtree text (via an auto-sized ancestor), the children list
+// (Append/Remove/SetChildren), the node's own width/padding/flex/position/
+// display/overflow style, and the sibling that has to keep being pruned.
+var ilpAutoOps = []ilpAutoOp{
+	{"leaf-text-long", func(a *ilpAutoTree) {
+		a.leaf.SetText("a much longer payload that must wrap over several rows inside its box")
+	}},
+	{"leaf-text-short", func(a *ilpAutoTree) { a.leaf.SetText("x") }},
+	{"leaf-text-multiline", func(a *ilpAutoTree) { a.leaf.SetText("two\nlines") }},
+	{"inner-width-fixed", func(a *ilpAutoTree) {
+		a.inner.SetStyle(Style{FlexDirection: Column, Width: Cells(24)})
+	}},
+	{"inner-width-auto", func(a *ilpAutoTree) {
+		a.inner.SetStyle(Style{FlexDirection: Column})
+	}},
+	{"mid-padding", func(a *ilpAutoTree) {
+		a.mid.SetStyle(Style{FlexDirection: Row, Padding: I(2)})
+	}},
+	{"mid-padding-clear", func(a *ilpAutoTree) {
+		a.mid.SetStyle(Style{FlexDirection: Row})
+	}},
+	{"mid-gap", func(a *ilpAutoTree) {
+		a.mid.SetStyle(Style{FlexDirection: Row, Gap: I(1)})
+	}},
+	{"mid-column", func(a *ilpAutoTree) {
+		a.mid.SetStyle(Style{FlexDirection: Column})
+	}},
+	{"leaf-grow", func(a *ilpAutoTree) {
+		a.leaf.SetStyle(Style{FlexDirection: Row, TextWrap: TextWrapWrap, FlexGrow: F(1), FlexShrink: F(1)})
+	}},
+	{"leaf-grow-clear", func(a *ilpAutoTree) {
+		a.leaf.SetStyle(Style{FlexDirection: Row, TextWrap: TextWrapWrap, FlexGrow: F(0), FlexShrink: F(1)})
+	}},
+	{"mid-display-none", func(a *ilpAutoTree) {
+		a.mid.SetStyle(Style{FlexDirection: Row, Display: DisplayNone})
+	}},
+	{"mid-display-flex", func(a *ilpAutoTree) {
+		a.mid.SetStyle(Style{FlexDirection: Row, Display: DisplayFlex})
+	}},
+	{"mid-absolute", func(a *ilpAutoTree) {
+		a.mid.SetStyle(Style{
+			FlexDirection: Row, Position: PositionAbsolute,
+			Left: Cells(2), Top: Cells(1), Width: Cells(28), Height: Cells(4),
+		})
+	}},
+	{"mid-relative", func(a *ilpAutoTree) {
+		a.mid.SetStyle(Style{FlexDirection: Row})
+	}},
+	{"inner-overflow-scroll", func(a *ilpAutoTree) {
+		a.inner.SetStyle(Style{
+			FlexDirection: Column, Height: Cells(3),
+			Overflow: OverflowScroll, OverflowX: OverflowScroll, OverflowY: OverflowScroll,
+		})
+	}},
+	{"inner-overflow-visible", func(a *ilpAutoTree) {
+		a.inner.SetStyle(Style{
+			FlexDirection: Column, Overflow: OverflowVisible,
+			OverflowX: OverflowVisible, OverflowY: OverflowVisible,
+		})
+	}},
+	{"inner-append-spare", func(a *ilpAutoTree) { a.inner.Append(a.spare) }},
+	{"inner-remove-last", func(a *ilpAutoTree) {
+		if n := len(a.inner.Children); n > 0 {
+			a.inner.Remove(a.inner.Children[n-1])
+		}
+	}},
+	{"inner-set-children", func(a *ilpAutoTree) {
+		a.inner.SetChildren(Text("alpha"), Text("beta payload that wraps over a couple of rows"))
+	}},
+	{"outer-wrap", func(a *ilpAutoTree) {
+		a.outer.SetStyle(Style{FlexDirection: Row, FlexWrap: Wrap, Width: Percent(100)})
+	}},
+	{"outer-unwrap", func(a *ilpAutoTree) {
+		a.outer.SetStyle(Style{FlexDirection: Column})
+	}},
+}
+
+// ilpMeasureWalks counts the nodes measureNode walks while fn runs. The
+// incremental pass and the from-zero twin are compared with it: the memoised
+// container measurements are only observably useful if the incremental pass
+// walks strictly fewer nodes than the cold pass it replaces.
+func ilpMeasureWalks(fn func()) int {
+	walks := 0
+	prev := measureNodeProbe
+	measureNodeProbe = func(*Node, int, int) { walks++ }
+	defer func() { measureNodeProbe = prev }()
+	fn()
+	return walks
+}
+
+// ilpAutoGeometry returns the snapshot with the scroll bookkeeping of every node
+// zeroed. That bookkeeping is not geometry: it is written by the pass that owns
+// a scroll node, so its value depends on how many passes a tree went through
+// while the node had OverflowScroll. The incremental tree applies one mutation
+// per pass while the twin replays the whole log before its single pass, so a box
+// whose overflow was switched on and off again legitimately keeps values in one
+// tree that the other never wrote. The scroll cases above pin that behaviour;
+// what this case pins is the geometry every rect is derived from.
+func ilpAutoGeometry(entries []ilpEntry) []ilpEntry {
+	out := make([]ilpEntry, len(entries))
+	copy(out, entries)
+	for i := range out {
+		f := out[i].fields
+		f.ScrollTop, f.ScrollHeight, f.ScrollViewportHeight, f.ScrollViewportTop = 0, 0, 0, 0
+		out[i].fields = f
+	}
+	return out
+}
+
+// ilpAutoRandomCase drives a deterministic pseudo-random sequence of the
+// mutation table through the auto-sized shape. After every step the incrementally
+// laid-out tree is compared, node by node and field by field, against a twin
+// built from scratch and fed the same op log, which is a genuinely cold
+// measurement: a memoised container measurement that outlived a mutation of its
+// subtree can only show up as a divergence here.
+//
+// The case also asserts it is not vacuous: the incremental pass has to have
+// pruned nodes and to have walked fewer measurement nodes than the cold twin on
+// a meaningful fraction of the steps.
+func ilpAutoRandomCase(t *testing.T) {
+	const (
+		autoSeed  = 0xa070
+		autoSteps = 300
+	)
+	type autoStep struct {
+		op       int
+		viewport Size
+	}
+
+	rng := rand.New(rand.NewSource(autoSeed))
+	incremental := ilpAutoBuild()
+	viewport := ilpViewports[0]
+	ComputeLayout(incremental.root, viewport, true)
+
+	log := make([]autoStep, 0, autoSteps)
+	prunedSteps, fewerWalksSteps := 0, 0
+	incrementalWalks, twinWalks := 0, 0
+
+	for step := 0; step < autoSteps; step++ {
+		opIdx := rng.Intn(len(ilpAutoOps))
+		nextViewport := viewport
+		if rng.Intn(4) == 0 {
+			nextViewport = ilpViewports[rng.Intn(len(ilpViewports))]
+		}
+		viewport = nextViewport
+		log = append(log, autoStep{op: opIdx, viewport: viewport})
+		ilpAutoOps[opIdx].apply(incremental)
+
+		label := fmt.Sprintf("auto step %d: %s viewport=%dx%d", step, ilpAutoOps[opIdx].name, viewport.Width, viewport.Height)
+
+		var incrementalSize, twinSize Size
+		var visited, twinVisited int
+		incrementalWalks = ilpMeasureWalks(func() {
+			incrementalSize, visited = computeLayout(incremental.root, viewport, true)
+		})
+
+		// The twin: the same final state, built from scratch and replayed.
+		twin := ilpAutoBuild()
+		for _, s := range log {
+			ilpAutoOps[s.op].apply(twin)
+		}
+		twinWalks = ilpMeasureWalks(func() {
+			twinSize, twinVisited = computeLayout(twin.root, viewport, true)
+		})
+
+		if visited < twinVisited {
+			prunedSteps++
+		}
+		if incrementalWalks < twinWalks {
+			fewerWalksSteps++
+		}
+
+		if incrementalSize != twinSize {
+			t.Fatalf("%s: root size %+v diverged from the from-zero twin %+v", label, incrementalSize, twinSize)
+		}
+		ilpCompareSnapshots(t, label, ilpAutoGeometry(ilpSnapshot(twin.root)), ilpAutoGeometry(ilpSnapshot(incremental.root)))
+	}
+
+	t.Logf("auto-sized case: seed=%#x steps=%d ops=%d | pruned steps=%d, steps with fewer measurement walks=%d "+
+		"(last: incremental=%d walks vs cold twin=%d), tree=%d nodes",
+		autoSeed, autoSteps, len(ilpAutoOps), prunedSteps, fewerWalksSteps,
+		incrementalWalks, twinWalks, ilpFullPassSize(incremental.root))
+
+	if prunedSteps < autoSteps/4 {
+		t.Fatalf("only %d of %d steps pruned a subtree; the incremental path was barely exercised", prunedSteps, autoSteps)
+	}
+	if fewerWalksSteps < autoSteps/4 {
+		t.Fatalf("only %d of %d steps walked fewer measurement nodes than the cold twin; the container measurements were not served from the memo",
+			fewerWalksSteps, autoSteps)
+	}
+}
+
 // apply the scroll bookkeeping the pass itself would have applied. A node the
 // pass cannot reach at all — one that left the tree, sits under a hidden node,
 // or is text content — has to keep the state the pre-prune code left on it.
