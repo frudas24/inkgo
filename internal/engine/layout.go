@@ -4,11 +4,21 @@ import (
 	core "github.com/frudas24/inkgo/internal/core"
 	"math"
 	"sort"
+	"sync/atomic"
 )
 
 type layoutCtx struct {
 	viewport Size
+	// stamp identifies this pass. Every node the pass reaches records it, so
+	// nodes that a pruned subtree skipped can be found afterwards.
+	stamp uint64
+	// visited counts the nodes the pass actually walked (diagnostics/tests).
+	visited int
 }
+
+// layoutPassStamp issues a unique stamp per pass. Atomic because independent
+// trees may be laid out from different goroutines under -race.
+var layoutPassStamp uint64
 
 type measured struct {
 	w, h int
@@ -188,14 +198,25 @@ func measureFlowContent(flow []*Node, s Style, dir FlexDirection, availW, availH
 // terminal-width constraint and natural height, matching Ink scrollback mode.
 // In fullscreen mode root height is constrained to viewport.Height.
 func ComputeLayout(root *Node, viewport Size, fullscreen bool) Size {
+	sz, _ := computeLayout(root, viewport, fullscreen)
+	return sz
+}
+
+// computeLayout is ComputeLayout plus the number of nodes the pass walked. The
+// prune in layoutNode is only observably useful if whole subtrees are skipped,
+// so tests assert on the count.
+func computeLayout(root *Node, viewport Size, fullscreen bool) (Size, int) {
 	if root == nil {
-		return Size{}
+		return Size{}, 0
 	}
 	if root.layoutCached && !root.layoutDirty && root.layoutViewport == viewport && root.layoutFullscreen == fullscreen {
 		refreshScrollState(root)
-		return Size{Width: root.Rect.Width, Height: root.Rect.Height}
+		return Size{Width: root.Rect.Width, Height: root.Rect.Height}, 0
 	}
-	ctx := layoutCtx{viewport: viewport}
+	// Snapshot the scroll nodes found by the previous pass: a pruned subtree is
+	// not walked, so its ScrollBoxes are not reached by this pass either.
+	prevScrolls := append([]*Node(nil), root.layoutScrollNodes...)
+	ctx := layoutCtx{viewport: viewport, stamp: atomic.AddUint64(&layoutPassStamp, 1)}
 	h := viewport.Height
 	if !fullscreen {
 		m := measureNode(root, viewport.Width, -1)
@@ -206,8 +227,59 @@ func ComputeLayout(root *Node, viewport Size, fullscreen bool) Size {
 	root.layoutViewport = viewport
 	root.layoutFullscreen = fullscreen
 	rebuildLayoutIndexes(root)
+	drainSkippedScroll(prevScrolls, ctx.stamp, root)
 	root.layoutDirty = false
-	return Size{Width: root.Rect.Width, Height: root.Rect.Height}
+	return Size{Width: root.Rect.Width, Height: root.Rect.Height}, ctx.visited
+}
+
+// drainSkippedScroll applies the scroll bookkeeping that layoutNode normally
+// performs at the end of its body to the ScrollBoxes this pass did not visit,
+// i.e. the ones sitting inside a pruned (geometrically unchanged) subtree.
+// Running it once, after the pass, yields the same result as the in-pass call:
+// the content rect and every child rect of a pruned subtree are unchanged, and
+// a scroll node whose descendants moved can never be pruned.
+//
+// Nodes the pass did reach are skipped by stamp, which is also what keeps the
+// call count at exactly one updateScrollState per scroll node and per pass.
+func drainSkippedScroll(prevScrolls []*Node, stamp uint64, root *Node) {
+	for _, n := range prevScrolls {
+		if n == nil || n.layoutStamp == stamp {
+			continue
+		}
+		// Only nodes the pass could have updated itself are drained. A node
+		// that left the tree, sits under a hidden node, or is text content was
+		// never updated by the in-pass call (layoutNode returns before its
+		// scroll bookkeeping for those), so draining it would make a pruned
+		// pass behave differently from the full pass it stands in for.
+		if !layoutPassReaches(n, root) {
+			continue
+		}
+		updateScrollState(n, n.ContentRect)
+	}
+}
+
+// layoutPassReaches reports whether layoutNode would have applied
+// updateScrollState to n during this pass. The pass never reaches a node that
+// left the tree or that sits under a hidden node, and it returns before its
+// scroll bookkeeping for text content (NodeText/NodeRawANSI render no
+// children, so nothing there can move). Such a node keeps the scroll state the
+// pre-prune code left on it: a pass that skips it must not touch it either.
+func layoutPassReaches(n, root *Node) bool {
+	if n == nil {
+		return false
+	}
+	if n.Kind == NodeText || n.Kind == NodeRawANSI {
+		return false
+	}
+	for cur := n; cur != nil; cur = cur.Parent {
+		if cur.Style.Display == DisplayNone {
+			return false
+		}
+		if cur == root {
+			return true
+		}
+	}
+	return false
 }
 
 func rebuildLayoutIndexes(root *Node) {
@@ -588,16 +660,25 @@ func justifyStartGap(j Justify, free, count, baseGap int) (start float64, gap fl
 	return 0, float64(baseGap)
 }
 
+// layoutNode assigns rects to n and its subtree. A subtree whose assigned rect
+// and cached rect agree and that holds no geometrically dirty node is left
+// untouched: its rects (and its scroll bookkeeping, handled by
+// drainSkippedScroll) are still valid.
 func layoutNode(ctx *layoutCtx, n *Node, assigned Rect, forceW, forceH bool) {
 	if n == nil {
 		return
 	}
+	ctx.visited++
 	s := n.Style
 	core.ApplyDefaults(&s)
 	n.Style = s
 	if s.Display == DisplayNone {
 		n.Rect = Rect{}
 		n.ContentRect = Rect{}
+		n.subtreeGeomDirty = false
+		// Hidden: nothing to lay out and, matching the historical early return,
+		// nothing for updateScrollState to do either.
+		n.layoutStamp = ctx.stamp
 		return
 	}
 
@@ -619,17 +700,36 @@ func layoutNode(ctx *layoutCtx, n *Node, assigned Rect, forceW, forceH bool) {
 	w = applyMinMax(w, s.MinWidth, s.MaxWidth, assigned.Width)
 	h = applyMinMax(h, s.MinHeight, s.MaxHeight, assigned.Height)
 
-	n.Rect = Rect{X: assigned.X, Y: assigned.Y, Width: max(0, w), Height: max(0, h)}
+	next := Rect{X: assigned.X, Y: assigned.Y, Width: max(0, w), Height: max(0, h)}
 	border := core.BorderEdges(s)
 	pad := core.PaddingEdges(s)
 	insets := AddEdges(border, pad)
-	content := Rect{
-		X:      n.Rect.X + insets.Left,
-		Y:      n.Rect.Y + insets.Top,
-		Width:  max(0, n.Rect.Width-insets.Left-insets.Right),
-		Height: max(0, n.Rect.Height-insets.Top-insets.Bottom),
+	nextContent := Rect{
+		X:      next.X + insets.Left,
+		Y:      next.Y + insets.Top,
+		Width:  max(0, next.Width-insets.Left-insets.Right),
+		Height: max(0, next.Height-insets.Top-insets.Bottom),
 	}
-	n.ContentRect = content
+
+	// Incremental prune. The subtree below a node is a pure function of the
+	// rect the parent assigned to it and of the subtree's own content, so when
+	// both the assigned rect and the cached rect agree and nothing inside the
+	// subtree is geometrically dirty, re-walking it would reproduce exactly the
+	// rects and scroll geometry already stored on those nodes. layoutNode never
+	// reads ctx.viewport (only passes ctx down), so the viewport is not a third
+	// input to this decision.
+	if !n.subtreeGeomDirty && n.Rect == next && n.ContentRect == nextContent {
+		// Nothing to do, but childrenLinearY stays valid for the same reason
+		// the rects do: child order and child rects are both unchanged. The
+		// node is deliberately left unstamped: everything a pruned subtree
+		// skipped, including the scroll bookkeeping of this very node, is
+		// handled by drainSkippedScroll after the pass.
+		return
+	}
+	n.layoutStamp = ctx.stamp
+	n.subtreeGeomDirty = false
+	n.Rect = next
+	n.ContentRect = nextContent
 
 	if n.Kind == NodeText || n.Kind == NodeRawANSI {
 		return
@@ -652,9 +752,9 @@ func layoutNode(ctx *layoutCtx, n *Node, assigned Rect, forceW, forceH bool) {
 	if dir == "" {
 		dir = Row
 	}
-	mainAvail, crossAvail := content.Width, content.Height
+	mainAvail, crossAvail := nextContent.Width, nextContent.Height
 	if dir == Column || dir == ColumnReverse {
-		mainAvail, crossAvail = content.Height, content.Width
+		mainAvail, crossAvail = nextContent.Height, nextContent.Width
 	}
 	gapMain := max(0, core.GapMain(s, dir))
 	gapCross := max(0, core.GapCross(s, dir))
@@ -726,26 +826,26 @@ func layoutNode(ctx *layoutCtx, n *Node, assigned Rect, forceW, forceH bool) {
 
 			var x, y, cw, ch int
 			if dir == Row || dir == RowReverse {
-				x = content.X + roundCell(mainPos) + it.margin.Left
-				y = content.Y + lineCrossPos + it.margin.Top + crossOffset
+				x = nextContent.X + roundCell(mainPos) + it.margin.Left
+				y = nextContent.Y + lineCrossPos + it.margin.Top + crossOffset
 				cw, ch = it.main, crossSize
 			} else {
-				x = content.X + lineCrossPos + it.margin.Left + crossOffset
-				y = content.Y + roundCell(mainPos) + it.margin.Top
+				x = nextContent.X + lineCrossPos + it.margin.Left + crossOffset
+				y = nextContent.Y + roundCell(mainPos) + it.margin.Top
 				cw, ch = crossSize, it.main
 			}
 
 			// Relative offsets translate the painted/layout rect but do not
 			// consume additional flex space, matching CSS/Yoga.
 			if it.node.Style.Position == PositionRelative {
-				if v, ok := resolveLength(it.node.Style.Left, content.Width); ok {
+				if v, ok := resolveLength(it.node.Style.Left, nextContent.Width); ok {
 					x += v
-				} else if v, ok := resolveLength(it.node.Style.Right, content.Width); ok {
+				} else if v, ok := resolveLength(it.node.Style.Right, nextContent.Width); ok {
 					x -= v
 				}
-				if v, ok := resolveLength(it.node.Style.Top, content.Height); ok {
+				if v, ok := resolveLength(it.node.Style.Top, nextContent.Height); ok {
 					y += v
-				} else if v, ok := resolveLength(it.node.Style.Bottom, content.Height); ok {
+				} else if v, ok := resolveLength(it.node.Style.Bottom, nextContent.Height); ok {
 					y -= v
 				}
 			}
@@ -759,10 +859,10 @@ func layoutNode(ctx *layoutCtx, n *Node, assigned Rect, forceW, forceH bool) {
 	}
 
 	for _, c := range absolute {
-		layoutAbsolute(ctx, c, content)
+		layoutAbsolute(ctx, c, nextContent)
 	}
 
-	updateScrollState(n, content)
+	updateScrollState(n, nextContent)
 	n.childrenLinearY = directChildrenLinearY(n)
 	_ = totalCross // retained for future align-content parity
 }

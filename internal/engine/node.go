@@ -121,6 +121,16 @@ type Node struct {
 	layoutDirty bool
 	generation  uint64
 
+	// subtreeGeomDirty means this sub-root (itself included) contains a change
+	// that can still move geometry and has not been visited by a layout pass
+	// yet. MarkDirty sets it on the mutated node and on every ancestor, so a
+	// clean subtree can be pruned without re-measuring it. markPaintDirty
+	// deliberately leaves it alone: paint-only changes never move geometry.
+	subtreeGeomDirty bool
+	// layoutStamp is the layout pass that last visited this node. ComputeLayout
+	// uses it to find the nodes a pruned subtree skipped (see drainScroll).
+	layoutStamp uint64
+
 	// Root-level layout cache metadata. Keeping it on Node avoids renderer-owned
 	// geometry state and lets ComputeLayout be reused by standalone callers.
 	layoutCached     bool
@@ -157,6 +167,9 @@ func newNode(kind NodeKind, style Style) *Node {
 		TabIndex:    -2,
 		dirty:       true,
 		layoutDirty: true,
+		// A fresh node carries no geometry, so it is dirty for layout until a
+		// pass visits it.
+		subtreeGeomDirty: true,
 	}
 }
 
@@ -430,6 +443,10 @@ func (n *Node) SetHandlers(h EventHandlers) {
 	n.Handlers = h
 }
 
+// MarkDirty invalidates geometry. Callers use it for every mutation that can
+// move a rect (text, style, children, button state), so it also marks the whole
+// ancestor chain as holding a geometrically dirty subtree, which is what lets
+// ComputeLayout prune unchanged siblings.
 func (n *Node) MarkDirty() {
 	for cur := n; cur != nil; cur = cur.Parent {
 		if cur == n || !cur.dirty {
@@ -437,6 +454,7 @@ func (n *Node) MarkDirty() {
 		}
 		cur.dirty = true
 		cur.layoutDirty = true
+		cur.subtreeGeomDirty = true
 	}
 }
 
