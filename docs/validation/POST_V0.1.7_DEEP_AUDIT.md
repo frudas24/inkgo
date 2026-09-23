@@ -87,6 +87,14 @@ Windows parser test binary     PASS (amd64)
 external consumer test/vet     PASS
 ```
 
+`check-coverage.sh` enforces the aggregate statement-coverage floor, not a minimum
+for every package. The examples include standalone applications with no package-
+local tests (`examples/embed` and `examples/fullscreen` report 0%); alias-only
+packages may have no statements to cover. This is intentional: these packages
+are compile-checked across the CI OS/Go matrix, while behavior is covered by the
+repository's package-level and integration suites. A per-package floor would
+incorrectly reject those deliberate cases.
+
 ## Coverage conclusion
 
 The audit does not recommend chasing a vanity 90% statement-coverage number. The useful threshold is now `>=80%` plus targeted race, fuzz, property, stress, real-console and external-consumer coverage. This campaign found multiple bugs while the project was already near 80%, demonstrating why risk-oriented tests are the stronger release gate.

@@ -5,3 +5,4 @@ coverage.out
 
 # Local agent-generated workspace state
 /.agent/
+.agent-go/

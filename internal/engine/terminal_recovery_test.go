@@ -64,6 +64,30 @@ func TestRuntimeEOFFlush(t *testing.T) {
 	}
 }
 
+func TestRuntimeResumeAfterCloseReopensEventQueue(t *testing.T) {
+	root := Root(Text("x"))
+	var keys []string
+	root.Handlers.OnKeyDown = func(e *KeyboardEvent) { keys = append(keys, e.Key.Name) }
+	rt := NewRuntime(root, strings.NewReader(""), io.Discard, RenderOptions{})
+	rt.EscapeTimeout = time.Millisecond
+	if err := rt.Close(); err != nil {
+		t.Fatal(err)
+	}
+	rt.ResumeTerminal()
+	defer rt.Close()
+	if !rt.Started() {
+		t.Fatal("ResumeTerminal did not enter terminal")
+	}
+	rt.HandleInput([]byte("\x1b"))
+	awaitRuntimeEvent(t, rt)
+	if err := rt.ProcessEvents(); err != nil {
+		t.Fatal(err)
+	}
+	if len(keys) != 1 || keys[0] != "escape" {
+		t.Fatalf("resumed runtime event was not dispatched: keys=%v", keys)
+	}
+}
+
 func TestRuntimeResumeCallbackDeadlock(t *testing.T) {
 	button := Button(Style{}, nil, Text("x"))
 	rt := NewRuntime(Root(button), strings.NewReader(""), io.Discard, RenderOptions{})

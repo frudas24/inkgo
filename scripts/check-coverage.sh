@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-minimum="${1:-74.0}"
+minimum="${1:-80.0}"
 profile="${2:-coverage.out}"
 
 go test ./... -coverprofile="$profile"

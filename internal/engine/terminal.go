@@ -1023,6 +1023,9 @@ func (rt *Runtime) ResumeTerminal() {
 	if err := rt.enterTerminal(); err != nil {
 		return
 	}
+	rt.eventMu.Lock()
+	rt.eventsClosed = false
+	rt.eventMu.Unlock()
 	// Rendering may invoke application callbacks, including lifecycle queries.
 	_, _ = rt.Render()
 }

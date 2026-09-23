@@ -158,6 +158,13 @@ go test -race ./...
 (cd test/pty && go mod download && go mod verify && go test ./... && go vet ./...)
 ```
 
+The coverage gate is an **aggregate** 80% statement-coverage floor, matching CI and
+release validation. It does not impose a package-by-package minimum: executable
+examples such as `examples/embed` and `examples/fullscreen` currently have no
+package-local tests and report 0%, while alias-only packages have no statements
+to cover. Those are not treated as individual gate failures; behavior is exercised
+through the repository's package, integration, race, fuzz and example-smoke tests.
+
 Fuzz targets:
 
 ```bash
