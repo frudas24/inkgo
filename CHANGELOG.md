@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.1.29 — reliable no-select controls and clipboard gestures
+
+- preserve rapid application clicks on `NoSelect` surfaces instead of treating the second click as text selection;
+- expose bounded native clipboard reads for right-click paste, while retaining the existing selection-copy path;
+- keep the runtime's click, selection and keyboard behavior deterministic across terminal and WSL clipboard paths;
+- publish the manifest for every tracked source file so release policy checks validate the exact tree.
+
 ## v0.1.25 — memoised container measurement
 
 - memoise a container's intrinsic measurement instead of re-walking it: `measureNode` cached only `NodeText`/`NodeRawANSI`, so a `Box`, a `ScrollBox` and the root re-ran `measureFlowContent` over their whole subtree on every measurement, and the parent's flex pass measures all of its children before the incremental prune in `layoutNode` can skip any of them - a footer `Text` update still cost O(transcript) of measuring, the half of PERF-001 that v0.1.24's pruning of the layout walk could not reach. `Node.flowCache` now memoises the non-text branch of `measureNode`, keyed on the exact available space and on `Node.measureEpoch`, which `MarkDirty` bumps on the mutated node and on every ancestor;
