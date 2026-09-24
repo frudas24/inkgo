@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.1.30 — generated API synchronized
+
+- synchronize the generated root facade with the deterministic generator ordering;
+- retain the `ReadClipboardSync` public export while making the policy gate reproducible.
+
 ## v0.1.29 — reliable no-select controls and clipboard gestures
 
 - preserve rapid application clicks on `NoSelect` surfaces instead of treating the second click as text selection;

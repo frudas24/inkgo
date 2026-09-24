@@ -259,7 +259,6 @@ var (
 	FindPlainTextURLAt         = engine.FindPlainTextURLAt
 	GetClearTerminalSequence   = engine.GetClearTerminalSequence
 	GetClipboardPath           = engine.GetClipboardPath
-	ReadClipboardSync          = engine.ReadClipboardSync
 	HasCursorUpViewportYankBug = engine.HasCursorUpViewportYankBug
 	HasRTLCharacters           = engine.HasRTLCharacters
 	HitTest                    = engine.HitTest
@@ -291,6 +290,7 @@ var (
 	QueryOSCColor              = engine.QueryOSCColor
 	QueryXTVERSION             = engine.QueryXTVERSION
 	RawANSI                    = engine.RawANSI
+	ReadClipboardSync          = engine.ReadClipboardSync
 	RenderToScreen             = engine.RenderToScreen
 	ReorderBidiGraphemes       = engine.ReorderBidiGraphemes
 	ReorderBidiStyled          = engine.ReorderBidiStyled
