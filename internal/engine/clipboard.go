@@ -23,6 +23,8 @@ const (
 	ClipboardOSC52Path  ClipboardPath = "osc52"
 )
 
+const maxClipboardReadBytes = 8 << 20
+
 // nativeClipboardCandidates lists the Linux utilities that can reach the local
 // clipboard, in preference order. On WSL the GOOS is still linux and none of the X11 or
 // Wayland tools exist, but the Windows utilities are on PATH: clip.exe is the system
@@ -38,6 +40,16 @@ var nativeClipboardCandidates = []struct {
 	{"xsel", []string{"--clipboard", "--input"}},
 	{"clip.exe", nil},
 	{"powershell.exe", []string{"-NoProfile", "-NonInteractive", "-Command", "$ErrorActionPreference='Stop'; [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false); Set-Clipboard -Value ([Console]::In.ReadToEnd())"}},
+}
+
+var nativeClipboardReaders = []struct {
+	name string
+	args []string
+}{
+	{"wl-paste", []string{"--no-newline"}},
+	{"xclip", []string{"-selection", "clipboard", "-o"}},
+	{"xsel", []string{"--clipboard", "--output"}},
+	{"powershell.exe", []string{"-NoProfile", "-NonInteractive", "-Command", "$ErrorActionPreference='Stop'; [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); Get-Clipboard -Raw"}},
 }
 
 // GetClipboardPath reports the strongest clipboard path currently available.
@@ -73,6 +85,71 @@ func runClipboardToolReader(ctx context.Context, name string, args []string, std
 	cmd := exec.CommandContext(ctx, path, args...)
 	cmd.Stdin = stdin
 	return cmd.Run()
+}
+
+func runClipboardToolOutput(ctx context.Context, name string, args []string) ([]byte, error) {
+	path, err := exec.LookPath(name)
+	if err != nil {
+		return nil, err
+	}
+	return exec.CommandContext(ctx, path, args...).Output()
+}
+
+// ReadClipboardSync reads a locally reachable clipboard after an explicit
+// application gesture. OSC-52 is intentionally write-only, so it is never
+// treated as a readable clipboard. The bounded result prevents a hostile or
+// malfunctioning clipboard provider from turning one paste into unbounded UI
+// memory.
+func ReadClipboardSync() (string, ClipboardPath, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if os.Getenv("SSH_CONNECTION") == "" {
+		if runtime.GOOS == "darwin" {
+			out, err := runClipboardToolOutput(ctx, "pbpaste", nil)
+			if err == nil {
+				if len(out) > maxClipboardReadBytes {
+					return "", "", errors.New("clipboard content exceeds read limit")
+				}
+				return string(out), ClipboardNative, nil
+			}
+		}
+		if runtime.GOOS == "windows" {
+			out, err := runClipboardToolOutput(ctx, "powershell.exe", nativeClipboardReaders[len(nativeClipboardReaders)-1].args)
+			if err == nil {
+				if len(out) > maxClipboardReadBytes {
+					return "", "", errors.New("clipboard content exceeds read limit")
+				}
+				return string(out), ClipboardNative, nil
+			}
+		}
+		if runtime.GOOS == "linux" {
+			var last error
+			for _, candidate := range nativeClipboardReaders {
+				out, err := runClipboardToolOutput(ctx, candidate.name, candidate.args)
+				if err == nil {
+					if len(out) > maxClipboardReadBytes {
+						return "", "", errors.New("clipboard content exceeds read limit")
+					}
+					return string(out), ClipboardNative, nil
+				}
+				last = err
+			}
+			if last != nil {
+				return "", "", last
+			}
+		}
+	}
+	if os.Getenv("TMUX") != "" {
+		out, err := runClipboardToolOutput(ctx, "tmux", []string{"save-buffer", "-"})
+		if err == nil {
+			if len(out) > maxClipboardReadBytes {
+				return "", "", errors.New("clipboard content exceeds read limit")
+			}
+			return string(out), ClipboardTmuxBuffer, nil
+		}
+		return "", "", err
+	}
+	return "", "", errors.New("no readable clipboard route available")
 }
 
 func windowsClipboardBytes(text string) []byte {

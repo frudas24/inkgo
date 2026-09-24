@@ -259,6 +259,7 @@ var (
 	FindPlainTextURLAt         = engine.FindPlainTextURLAt
 	GetClearTerminalSequence   = engine.GetClearTerminalSequence
 	GetClipboardPath           = engine.GetClipboardPath
+	ReadClipboardSync          = engine.ReadClipboardSync
 	HasCursorUpViewportYankBug = engine.HasCursorUpViewportYankBug
 	HasRTLCharacters           = engine.HasRTLCharacters
 	HitTest                    = engine.HitTest

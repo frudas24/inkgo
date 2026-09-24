@@ -646,10 +646,19 @@ func (rt *Runtime) dispatchMouse(m ParsedMouse) {
 		}
 		return
 	}
+	if button == 2 {
+		// Right clicks are ordinary application gestures.  They never begin or
+		// finish a text selection: a caller may use the bubbled ClickEvent for a
+		// context action such as copy-selected / paste-into-editor.
+		if !motion && m.Action == "release" {
+			screen := rt.selectionScreen()
+			_, _ = DispatchClickDetailed(rt.Root, rt.Focus, screen, x, y, 2)
+		}
+		return
+	}
 
 	if button != 0 {
-		// The fork's DOM click event is left-button only. A non-left release
-		// can still terminate an orphaned text selection.
+		// Other non-left buttons can still terminate an orphaned text selection.
 		if m.Action == "release" && rt.Selection != nil && rt.Selection.Dragging {
 			rt.finishSelection()
 		}

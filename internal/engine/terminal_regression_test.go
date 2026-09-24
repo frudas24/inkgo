@@ -90,6 +90,24 @@ func TestRuntimeIgnoresObsoleteTimeout(t *testing.T) {
 	}
 }
 
+func TestRuntimeRightClickBubblesWithoutChangingSelection(t *testing.T) {
+	root := Root(Text("context"))
+	var buttons []int
+	root.Handlers.OnClick = func(e *ClickEvent) { buttons = append(buttons, e.Button) }
+	rt := NewRuntime(root, strings.NewReader(""), io.Discard, RenderOptions{Width: 20, Height: 4})
+	if err := rt.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer rt.Close()
+	rt.HandleInput([]byte("\x1b[<2;1;1M\x1b[<2;1;1m"))
+	if len(buttons) != 1 || buttons[0] != 2 {
+		t.Fatalf("right click buttons=%v", buttons)
+	}
+	if rt.Selection != nil && (rt.Selection.Dragging || rt.Selection.HasSelection()) {
+		t.Fatalf("right click changed selection: %+v", rt.Selection)
+	}
+}
+
 func TestRuntimeCloseDiscardsQueuedTimeout(t *testing.T) {
 	rt := NewRuntime(Root(Text("x")), strings.NewReader(""), io.Discard, RenderOptions{})
 	calls := 0
