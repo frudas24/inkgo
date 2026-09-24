@@ -714,7 +714,17 @@ func (rt *Runtime) handleLeftPress(m ParsedMouse, p Point) {
 	if distance < 0 {
 		distance = defaultMultiClickDistance
 	}
-	near := !rt.lastClickTime.IsZero() && now.Sub(rt.lastClickTime) < timeout &&
+	screen := rt.selectionScreen()
+	// A NoSelect surface is still allowed to expose application clicks.  It
+	// must never turn a rapid second click into a text selection, because that
+	// consumes the release and makes an ordinary control appear dead.
+	selectable := false
+	if screen != nil {
+		if cell, ok := screen.CellAt(p.X, p.Y); ok {
+			selectable = !cell.NoSelect
+		}
+	}
+	near := selectable && !rt.lastClickTime.IsZero() && now.Sub(rt.lastClickTime) < timeout &&
 		absInt(p.X-rt.lastClick.X) <= distance && absInt(p.Y-rt.lastClick.Y) <= distance
 	if near {
 		rt.clickCount++
@@ -726,8 +736,7 @@ func (rt *Runtime) handleLeftPress(m ParsedMouse, p Point) {
 
 	rt.Selection.Start(p.X, p.Y)
 	rt.Selection.LastPressHadAlt = m.Button&0x08 != 0
-	if rt.clickCount >= 2 {
-		screen := rt.selectionScreen()
+	if selectable && rt.clickCount >= 2 {
 		if screen != nil {
 			if rt.clickCount == 2 {
 				if !rt.Selection.SelectWordAt(screen, p.X, p.Y) {

@@ -108,6 +108,33 @@ func TestRuntimeRightClickBubblesWithoutChangingSelection(t *testing.T) {
 	}
 }
 
+func TestRuntimeRapidClicksOnNoSelectSurfaceStillDispatch(t *testing.T) {
+	control := Text("return")
+	clicks := 0
+	control.Handlers.OnClick = func(e *ClickEvent) {
+		if e.Button == 0 {
+			clicks++
+		}
+	}
+	root := Root(NoSelectBox(Style{}, control))
+	rt := NewRuntime(root, strings.NewReader(""), io.Discard, RenderOptions{Width: 20, Height: 4})
+	if err := rt.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer rt.Close()
+
+	// Both press/release pairs hit the same cell inside the multi-click window.
+	// NoSelect prevents text selection, not application activation.
+	input := "\x1b[<0;1;1M\x1b[<0;1;1m\x1b[<0;1;1M\x1b[<0;1;1m"
+	rt.HandleInput([]byte(input))
+	if clicks != 2 {
+		t.Fatalf("clicks=%d, want both NoSelect clicks dispatched", clicks)
+	}
+	if rt.Selection != nil && rt.Selection.HasSelection() {
+		t.Fatalf("NoSelect click created a selection: %+v", rt.Selection)
+	}
+}
+
 func TestRuntimeCloseDiscardsQueuedTimeout(t *testing.T) {
 	rt := NewRuntime(Root(Text("x")), strings.NewReader(""), io.Discard, RenderOptions{})
 	calls := 0
