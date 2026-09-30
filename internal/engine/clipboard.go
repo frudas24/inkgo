@@ -30,7 +30,9 @@ const maxClipboardReadBytes = 8 << 20
 // Wayland tools exist, but the Windows utilities are on PATH: clip.exe is the system
 // clipboard and the PowerShell fallback reads stdin, so both write to the clipboard the
 // user is actually looking at. Run through runClipboardTool, whose stdin carries the
-// text, so neither needs argument quoting.
+// text, so neither needs argument quoting. On a native desktop the two bridge entries are
+// simply not on PATH, which the walk below reports as "nothing installed" instead of
+// quoting the LookPath failure of a Windows executable in a diagnostic about Linux.
 var nativeClipboardCandidates = []struct {
 	name string
 	args []string
@@ -50,6 +52,67 @@ var nativeClipboardReaders = []struct {
 	{"xclip", []string{"-selection", "clipboard", "-o"}},
 	{"xsel", []string{"--clipboard", "--output"}},
 	{"powershell.exe", []string{"-NoProfile", "-NonInteractive", "-Command", "$ErrorActionPreference='Stop'; [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); Get-Clipboard -Raw"}},
+}
+
+// errNoNativeClipboard is the report for a linux session where none of the candidate
+// utilities is installed. X11 and Wayland expose no clipboard without a client tool, so
+// that is what the user has to be told, together with the remedy. The walk below used to
+// return the LookPath error of the last candidate instead, which on a native desktop is
+// the WSL-only `powershell.exe`: copying from the TUI printed
+// `native clipboard: exec: "powershell.exe": executable file not found in $PATH`, a
+// Windows executable that host never had, and no hint at what would fix the copy.
+var errNoNativeClipboard = errors.New("no native clipboard utility installed (install wl-clipboard, xclip or xsel)")
+
+// nativeToolFailures reports the installed candidates that failed, or the absence of any
+// candidate at all. A utility missing from PATH was never attempted, so it is not a
+// failure and is deliberately not named.
+func nativeToolFailures(failures []string) error {
+	if len(failures) == 0 {
+		return errNoNativeClipboard
+	}
+	return errors.New("native clipboard utility failed: " + strings.Join(failures, "; "))
+}
+
+// readNativeClipboardLinux walks the reader list under that rule.
+func readNativeClipboardLinux(ctx context.Context) (string, ClipboardPath, error) {
+	var failures []string
+	for _, candidate := range nativeClipboardReaders {
+		if _, err := exec.LookPath(candidate.name); err != nil {
+			continue
+		}
+		out, err := runClipboardToolOutput(ctx, candidate.name, candidate.args)
+		if err != nil {
+			failures = append(failures, candidate.name+": "+err.Error())
+			continue
+		}
+		if len(out) > maxClipboardReadBytes {
+			return "", "", errors.New("clipboard content exceeds read limit")
+		}
+		return string(out), ClipboardNative, nil
+	}
+	return "", "", nativeToolFailures(failures)
+}
+
+// copyNativeClipboardLinux walks the writer list under that rule.
+func copyNativeClipboardLinux(ctx context.Context, text string) error {
+	var failures []string
+	for _, candidate := range nativeClipboardCandidates {
+		if _, err := exec.LookPath(candidate.name); err != nil {
+			continue
+		}
+		var err error
+		if candidate.name == "clip.exe" {
+			err = runWindowsClip(ctx, text)
+		} else {
+			err = runClipboardTool(ctx, candidate.name, candidate.args, text)
+		}
+		if err != nil {
+			failures = append(failures, candidate.name+": "+err.Error())
+			continue
+		}
+		return nil
+	}
+	return nativeToolFailures(failures)
 }
 
 // GetClipboardPath reports the strongest clipboard path currently available.
@@ -123,20 +186,7 @@ func ReadClipboardSync() (string, ClipboardPath, error) {
 			}
 		}
 		if runtime.GOOS == "linux" {
-			var last error
-			for _, candidate := range nativeClipboardReaders {
-				out, err := runClipboardToolOutput(ctx, candidate.name, candidate.args)
-				if err == nil {
-					if len(out) > maxClipboardReadBytes {
-						return "", "", errors.New("clipboard content exceeds read limit")
-					}
-					return string(out), ClipboardNative, nil
-				}
-				last = err
-			}
-			if last != nil {
-				return "", "", last
-			}
+			return readNativeClipboardLinux(ctx)
 		}
 	}
 	if os.Getenv("TMUX") != "" {
@@ -167,6 +217,9 @@ func runWindowsClip(ctx context.Context, text string) error {
 
 // CopyNativeClipboard writes to a local OS clipboard utility. It refuses to
 // run across SSH because that would mutate the remote machine's clipboard.
+// On Linux it reports errNoNativeClipboard when no candidate is installed, so a caller
+// that shows the error can tell the user the remedy instead of quoting the LookPath
+// failure of some utility that was never installed.
 func CopyNativeClipboard(ctx context.Context, text string) error {
 	if os.Getenv("SSH_CONNECTION") != "" {
 		return errors.New("native clipboard disabled across SSH")
@@ -180,24 +233,9 @@ func CopyNativeClipboard(ctx context.Context, text string) error {
 	case "windows":
 		return runWindowsClip(ctx, text)
 	case "linux":
-		var last error
-		for _, candidate := range nativeClipboardCandidates {
-			var err error
-			if candidate.name == "clip.exe" {
-				err = runWindowsClip(ctx, text)
-			} else {
-				err = runClipboardTool(ctx, candidate.name, candidate.args, text)
-			}
-			if err == nil {
-				return nil
-			}
-			last = err
-		}
-		if last != nil {
-			return last
-		}
+		return copyNativeClipboardLinux(ctx, text)
 	}
-	return errors.New("no native clipboard utility available")
+	return errNoNativeClipboard
 }
 
 // TmuxLoadBuffer loads tmux's paste buffer and asks recent tmux versions to

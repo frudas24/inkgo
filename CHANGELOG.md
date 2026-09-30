@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.1.31 — a native Linux desktop reports the missing clipboard tool, not the Windows bridge
+
+- `CopyNativeClipboard` and `ReadClipboardSync` on linux now separate "not installed" from "installed and failed": a candidate missing from PATH was never attempted, so it is no longer the error the caller sees. With no clipboard client at all the report is `no native clipboard utility installed (install wl-clipboard, xclip or xsel)`, which is exactly the native-desktop case - X11 and Wayland expose no clipboard without a client tool;
+- the previous report was the LookPath error of the last candidate, which on a native desktop is the WSL-only `powershell.exe`: copying from the TUI printed `native clipboard: exec: "powershell.exe": executable file not found in $PATH`, a Windows executable that host never had, with no hint at the remedy. The bridge itself is untouched - `clip.exe` and `powershell.exe` still win as candidates whenever they exist, so WSL copying keeps working;
+- an installed utility that really fails is now named (`xclip: exit status 1`), so a broken client is no longer indistinguishable from an absent bridge;
+- no public API change and no change to the OSC 52 or tmux routes;
+
 ## v0.1.30 — generated API synchronized
 
 - synchronize the generated root facade with the deterministic generator ordering;
