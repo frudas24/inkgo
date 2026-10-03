@@ -816,7 +816,7 @@ func (r *Renderer) WriteFrame(w io.Writer, root *Node) (Frame, error) {
 	if f.Patch == "" {
 		return f, nil
 	}
-	_, err := io.WriteString(w, f.Patch)
+	err := writeFullString(w, f.Patch)
 	if err != nil {
 		r.Invalidate()
 	}

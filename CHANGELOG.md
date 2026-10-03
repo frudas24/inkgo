@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.1.32 — terminal output integrity and the clipboard selection boundary
+
+- `Runtime.WriteRaw` and `Renderer.WriteFrame` now normalise a short write (`n < len(s)` with a nil error) into `io.ErrShortWrite` through the new `writeFullString` helper. The `io.Writer` contract forbids that combination, but `io.WriteString` does not enforce it, so a truncated frame or lifecycle/title/clipboard sequence used to be reported as delivered while the renderer published it as the physical screen state: the next render diffed against a screen that was never reached and the missing bytes stayed missing;
+- because the check lives in `WriteRaw`, every consumer of the out-of-band write path is covered (frames, lifecycle sequences, title, notifications, clipboard). The recovery path already existed: `Runtime.Render` and `Renderer.WriteFrame` invalidate the incremental renderer on any write error, so the next frame is a full repaint instead of a diff. A writer that keeps short-writing still returns an error, which now propagates instead of being swallowed;
+- `Runtime.CopySelection` returns `clipboard sequence requires a terminal output writer` when there is an OSC 52 sequence to emit and the runtime has no output writer, and no longer clears the selection on that path. Previously the emission was skipped silently, success was reported and the selection was dropped, which in an SSH session without a writer lost the only copy of the text; the error is checked before the cleanup, so the writer-present path (including `clear=true`) keeps its behaviour;
+- `CopySelectionOnRelease` is unchanged: it passes `clear=false` and keeps ignoring the error, so the release path never loses the selection;
+- no exported signature changed and no public API was removed; the OSC 52, tmux and native clipboard routes are untouched;
+- adversarial regressions added in `internal/engine/runtime_short_write_adversarial_test.go` and `internal/engine/selection_clipboard_missing_output_adversarial_test.go`, with the reports and the pre-fix failure evidence under `docs/bugs/`.
+
 ## v0.1.31 — a native Linux desktop reports the missing clipboard tool, not the Windows bridge
 
 - `CopyNativeClipboard` and `ReadClipboardSync` on linux now separate "not installed" from "installed and failed": a candidate missing from PATH was never attempted, so it is no longer the error the caller sees. With no clipboard client at all the report is `no native clipboard utility installed (install wl-clipboard, xclip or xsel)`, which is exactly the native-desktop case - X11 and Wayland expose no clipboard without a client tool;

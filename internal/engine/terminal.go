@@ -255,16 +255,29 @@ func (rt *Runtime) SetRoot(root *Node) {
 	}
 }
 
+// writeFullString writes s and normalizes a short write with a nil error into
+// io.ErrShortWrite. The io.Writer contract forbids returning n < len(s) with a
+// nil error, but io.WriteString does not enforce it, so terminal output must:
+// a truncated frame or lifecycle sequence has to invalidate render state
+// instead of being reported as delivered.
+func writeFullString(w io.Writer, s string) error {
+	n, err := io.WriteString(w, s)
+	if err == nil && n != len(s) {
+		return io.ErrShortWrite
+	}
+	return err
+}
+
 // WriteRaw writes a terminal control sequence or other out-of-band payload.
-// It is the Go equivalent of the fork's TerminalWriteContext.
+// It is the Go equivalent of the fork's TerminalWriteContext. A partial write
+// is reported as io.ErrShortWrite even when the writer returns a nil error.
 func (rt *Runtime) WriteRaw(data string) error {
 	if rt == nil || rt.Out == nil || data == "" {
 		return nil
 	}
 	rt.writeMu.Lock()
 	defer rt.writeMu.Unlock()
-	_, err := io.WriteString(rt.Out, data)
-	return err
+	return writeFullString(rt.Out, data)
 }
 
 // ClearTerminal clears the terminal and invalidates renderer assumptions so
@@ -527,15 +540,26 @@ func (rt *Runtime) SelectionText() string {
 	return rt.Selection.Text(screen)
 }
 
+// errClipboardNoWriter reports that the clipboard payload could not be
+// delivered because the runtime has no output writer to carry the sequence.
+var errClipboardNoWriter = errors.New("clipboard sequence requires a terminal output writer")
+
 // CopySelection writes the best available clipboard escape sequence and, when
 // clear is true, clears the visual selection after copying.
+//
+// When the runtime has no output writer the sequence cannot reach the
+// terminal, so the attempt is reported as an error and the selection is kept:
+// clearing it would destroy the only copy of the text the user still holds.
 func (rt *Runtime) CopySelection(clear bool) (text string, path ClipboardPath, err error) {
 	text = rt.SelectionText()
 	if text == "" {
 		return "", "", nil
 	}
 	sequence, path := SetClipboard(text)
-	if rt.Out != nil && sequence != "" {
+	if sequence != "" {
+		if rt.Out == nil {
+			return text, path, errClipboardNoWriter
+		}
 		if err = rt.WriteRaw(sequence); err != nil {
 			return text, path, err
 		}
