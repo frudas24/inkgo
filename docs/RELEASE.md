@@ -1,6 +1,6 @@
 # Release checklist
 
-The latest published release is **v0.1.32**. This document is the checklist for
+The latest published release is **v0.1.33**. This document is the checklist for
 preparing the **next** release; do not reuse an already-published tag for new
 source changes.
 

@@ -13,6 +13,7 @@ type (
 	Cell               = engine.Cell
 	CellWidth          = engine.CellWidth
 	ClickEvent         = engine.ClickEvent
+	ClipboardImage     = engine.ClipboardImage
 	ClipboardPath      = engine.ClipboardPath
 	Clock              = engine.Clock
 	Color              = engine.Color
@@ -201,6 +202,7 @@ var (
 	ClampRect                  = engine.ClampRect
 	EdgeAll                    = engine.EdgeAll
 	EdgeXY                     = engine.EdgeXY
+	ErrNoClipboardImage        = engine.ErrNoClipboardImage
 	ExpandTabs                 = engine.ExpandTabs
 	F                          = engine.F
 	Graphemes                  = engine.Graphemes
@@ -290,6 +292,7 @@ var (
 	QueryOSCColor              = engine.QueryOSCColor
 	QueryXTVERSION             = engine.QueryXTVERSION
 	RawANSI                    = engine.RawANSI
+	ReadClipboardImageSync     = engine.ReadClipboardImageSync
 	ReadClipboardSync          = engine.ReadClipboardSync
 	RenderToScreen             = engine.RenderToScreen
 	ReorderBidiGraphemes       = engine.ReorderBidiGraphemes
