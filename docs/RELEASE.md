@@ -7,8 +7,10 @@ source changes.
 ## Choose the next version
 
 Before tagging, update `VERSION`, `version.go`, the README install example when
-appropriate, `docs/STABILITY.md`, and promote the relevant `CHANGELOG.md`
-`Unreleased` entries under the new version heading.
+appropriate, `docs/STABILITY.md`, `docs/PORT_STATUS.md`, and promote the relevant
+`CHANGELOG.md` `Unreleased` entries under the new version heading.
+`./scripts/check-version.sh` fails when the documents disagree about the latest
+published version.
 
 ## Validate before tagging
 
@@ -43,18 +45,19 @@ Ubuntu, macOS and Windows, with an additional Linux race campaign.
 ## Tag
 
 After the validated tree is committed to `main`, choose a new immutable semantic
-version (for example `v0.1.33`) and create an annotated tag:
+version (for example `vX.Y.Z`, never a tag that is already published) and create
+an annotated tag:
 
 ```bash
-git tag -a v0.1.33 -m "inkgo v0.1.33"
-git push origin v0.1.33
+git tag -a vX.Y.Z -m "inkgo vX.Y.Z"
+git push origin vX.Y.Z
 ```
 
 Then verify the exact version you published:
 
 ```bash
-go list -m github.com/frudas24/inkgo@v0.1.33
-go get github.com/frudas24/inkgo@v0.1.33
+go list -m github.com/frudas24/inkgo@vX.Y.Z
+go get github.com/frudas24/inkgo@vX.Y.Z
 ```
 
 ## Suggested GitHub metadata

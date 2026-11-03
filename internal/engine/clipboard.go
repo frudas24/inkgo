@@ -151,11 +151,71 @@ func runClipboardToolReader(ctx context.Context, name string, args []string, std
 }
 
 func runClipboardToolOutput(ctx context.Context, name string, args []string) ([]byte, error) {
+	return runClipboardToolOutputLimited(ctx, name, args, maxClipboardReadBytes)
+}
+
+// errClipboardReadTooLarge only stops the copy inside boundedOutput; it never reaches a
+// caller, because a cap hit is reported through the data instead.
+var errClipboardReadTooLarge = errors.New("clipboard content exceeds read limit")
+
+// boundedOutput collects at most limit+1 bytes of a helper's stdout.
+//
+// The extra byte is what keeps the cap visible to the caller's own length check: the
+// reader stores at most limit+1 bytes and then stops, so a caller that accepts limit
+// bytes still reports "exceeds read limit" while the memory held never depends on how
+// much the helper decides to print.
+type boundedOutput struct {
+	buf      bytes.Buffer
+	limit    int
+	exceeded bool
+}
+
+func (b *boundedOutput) Write(p []byte) (int, error) {
+	remaining := b.limit + 1 - b.buf.Len()
+	if remaining <= 0 {
+		b.exceeded = true
+		return 0, errClipboardReadTooLarge
+	}
+	if len(p) > remaining {
+		b.buf.Write(p[:remaining])
+		b.exceeded = true
+		return remaining, errClipboardReadTooLarge
+	}
+	return b.buf.Write(p)
+}
+
+// runClipboardToolOutputLimited runs a reader and keeps at most limit bytes.
+//
+// The cap is enforced while the helper runs, not after it exits: a clipboard provider is
+// written by arbitrary applications, so reading one to EOF before looking at its length
+// would turn a single paste into unbounded memory. Hitting the cap stops the copy, which
+// closes the read end of the helper's stdout - a helper that keeps writing dies on
+// SIGPIPE, and one that ignores it is killed by ctx.
+func runClipboardToolOutputLimited(ctx context.Context, name string, args []string, limit int) ([]byte, error) {
 	path, err := exec.LookPath(name)
 	if err != nil {
 		return nil, err
 	}
-	return exec.CommandContext(ctx, path, args...).Output()
+	return runClipboardToolPathLimited(ctx, path, args, limit)
+}
+
+// runClipboardToolPathLimited is runClipboardToolOutputLimited for an already resolved
+// helper, so a caller that had to look the program up can reuse its answer.
+func runClipboardToolPathLimited(ctx context.Context, path string, args []string, limit int) ([]byte, error) {
+	out := &boundedOutput{limit: limit}
+	cmd := exec.CommandContext(ctx, path, args...)
+	cmd.Stdout = out
+	runErr := cmd.Run()
+	// A cap hit is reported through the data, not through err: the caller's length check
+	// owns the message, and the process error that follows from closing the read end is a
+	// consequence of the cap rather than a separate failure.
+	if out.exceeded {
+		return out.buf.Bytes(), nil
+	}
+	if runErr != nil {
+		return nil, runErr
+	}
+	return out.buf.Bytes(), nil
 }
 
 // ReadClipboardSync reads a locally reachable clipboard after an explicit

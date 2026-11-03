@@ -59,4 +59,4 @@ No vendor should be added merely to erase this percentage. Add complexity only w
 
 ## Release boundary
 
-The latest published tag is `v0.1.32`. New changes should remain under `Unreleased` until the next validated tag is created. Repository description/topics are GitHub metadata and are not part of source archives. See `RELEASE.md`.
+The latest published tag is `v0.1.33`. New changes should remain under `Unreleased` until the next validated tag is created. Repository description/topics are GitHub metadata and are not part of source archives. See `RELEASE.md`.

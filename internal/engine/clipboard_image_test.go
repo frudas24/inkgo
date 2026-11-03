@@ -5,9 +5,11 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"image"
 	"image/color"
 	"image/png"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -284,5 +286,92 @@ func TestSanitizeClipboardImageHintKeepsOnlyAFileName(t *testing.T) {
 		if got := sanitizeClipboardImageHint(raw); got != want {
 			t.Fatalf("sanitizeClipboardImageHint(%q) = %q, want %q", raw, got, want)
 		}
+	}
+}
+
+// The read cap has to be enforced while the helper runs. Reading a provider to EOF and
+// only then comparing its length - which is what Output() did - turns a hostile or
+// malfunctioning clipboard into unbounded memory, so the refusal must arrive with the
+// truncated length instead of the whole stream.
+func TestRunClipboardToolOutputLimitedStopsAtTheCap(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the fake helper is a POSIX shell command")
+	}
+	const limit = 4096
+	out, err := runClipboardToolOutputLimited(
+		context.Background(), "sh", []string{"-c", "head -c 100000 /dev/zero"}, limit)
+	if err != nil {
+		t.Fatalf("a capped read reports through the data, not through err: %v", err)
+	}
+	if len(out) != limit+1 {
+		t.Fatalf("read %d bytes, want the cap made visible as %d", len(out), limit+1)
+	}
+	if len(out) > maxClipboardReadBytes {
+		t.Fatalf("read %d bytes, over the reader's own limit", len(out))
+	}
+}
+
+func TestRunClipboardToolOutputLimitedKeepsSmallOutputAndRealFailures(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the fake helper is a POSIX shell command")
+	}
+	out, err := runClipboardToolOutputLimited(context.Background(), "sh", []string{"-c", "printf hello"}, 64)
+	if err != nil || string(out) != "hello" {
+		t.Fatalf("out = %q err = %v", out, err)
+	}
+	if _, err := runClipboardToolOutputLimited(context.Background(), "sh", []string{"-c", "exit 9"}, 64); err == nil {
+		t.Fatal("a failing helper must still fail: the cap may not swallow it")
+	}
+}
+
+// The seam that talks to a real helper is the production path, so it has to carry the
+// transport cap itself: this calls it directly, before any test replaces it.
+func TestClipboardImageSeamCapsTheHelperOutput(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the fake helper is a POSIX shell command")
+	}
+	production := clipboardImageRun
+	over := clipboardImageTransportLimit + 1024
+	out, found, err := production(context.Background(), "sh", []string{"-c", fmt.Sprintf("head -c %d /dev/zero", over)})
+	if !found || err != nil {
+		t.Fatalf("found = %v err = %v", found, err)
+	}
+	if len(out) > clipboardImageTransportLimit+1 {
+		t.Fatalf("read %d bytes, want the %d byte transport cap to stop the read", len(out), clipboardImageTransportLimit)
+	}
+}
+
+// An image that is over the limit is not an empty clipboard: reporting it as ErrNoClipboardImage
+// makes the caller fall back to a text paste of nothing and hides the reason.
+func TestReadClipboardImageLinuxReportsAnOversizedImageAsAFailure(t *testing.T) {
+	oversized := append([]byte{0x89, 'P', 'N', 'G'}, make([]byte, maxClipboardImageBytes)...)
+	withClipboardImageRunner(t, func(_ context.Context, name string, _ []string) ([]byte, bool, error) {
+		if name == "wl-paste" {
+			return oversized, true, nil
+		}
+		return nil, false, nil
+	})
+	_, _, err := readClipboardImageLinux(context.Background())
+	if err == nil || !errors.Is(err, errClipboardImageTooLarge) {
+		t.Fatalf("err = %v, want the size refusal", err)
+	}
+	if errors.Is(err, ErrNoClipboardImage) {
+		t.Fatalf("an oversized image was reported as an empty clipboard: %v", err)
+	}
+	if !strings.Contains(err.Error(), "wl-paste") {
+		t.Fatalf("the refusal does not name the tool that produced it: %v", err)
+	}
+
+	// The same rule holds for the Windows bridge, whose payload is bounded before it is
+	// decoded.
+	withClipboardImageRunner(t, func(_ context.Context, name string, _ []string) ([]byte, bool, error) {
+		if name == "powershell.exe" {
+			return []byte("shot.png\n" + strings.Repeat("A", base64.StdEncoding.EncodedLen(maxClipboardImageBytes)+64)), true, nil
+		}
+		return nil, false, nil
+	})
+	_, _, err = readClipboardImageLinux(context.Background())
+	if err == nil || !errors.Is(err, errClipboardImageTooLarge) || errors.Is(err, ErrNoClipboardImage) {
+		t.Fatalf("err = %v, want the bridge's size refusal", err)
 	}
 }

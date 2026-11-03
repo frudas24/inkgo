@@ -35,6 +35,15 @@ type ClipboardImage struct {
 // all", which is what it has to report to the operator.
 var ErrNoClipboardImage = errors.New("clipboard holds no image")
 
+// errClipboardImageTooLarge reports clipboard content that was recognized as an image but
+// is larger than one read may return.
+//
+// It is deliberately not ErrNoClipboardImage: the clipboard does hold an image, so
+// reporting it as empty would make a caller fall back to a text paste of nothing and hide
+// the reason. A screenshot from a modern camera or a large display is the ordinary way to
+// reach this limit.
+var errClipboardImageTooLarge = errors.New("clipboard image exceeds the size limit")
+
 // maxClipboardImageBytes bounds one read. It matches the text reader's limit for the
 // same reason: the clipboard is written by arbitrary applications, so a hosted or
 // malfunctioning provider must not be able to turn one paste into unbounded memory.
@@ -103,15 +112,22 @@ var nativeClipboardImageReaders = []struct {
 // stop producing (v0.1.31). A helper that exists and fails returns a non-nil err.
 type clipboardImageTool func(ctx context.Context, name string, args []string) (out []byte, found bool, err error)
 
+// clipboardImageTransportLimit bounds a helper's stdout: the base64 payload the Windows
+// route can print for an image at the byte limit, plus room for the name line ahead of
+// it. The parsed payload is bounded again below, so this is the transport cap that stops
+// a provider from being read to EOF in the first place.
+var clipboardImageTransportLimit = base64.StdEncoding.EncodedLen(maxClipboardImageBytes) + 4096
+
 // clipboardImageRun is the seam tests replace to exercise the Windows and Linux
 // routes - including their ordering and their exit-code handling - without a real
-// clipboard, which no headless test host has.
-var clipboardImageRun clipboardImageTool = func(ctx context.Context, name string, args []string) ([]byte, bool, error) {
-	path, err := exec.LookPath(name)
-	if err != nil {
+// clipboard, which no headless test host has. Its output is capped: a helper that keeps
+// printing is stopped at clipboardImageTransportLimit bytes instead of being buffered.
+var clipboardImageRun clipboardImageTool = func(ctx context.Context, name string, args []string) (out []byte, found bool, err error) {
+	path, lookErr := exec.LookPath(name)
+	if lookErr != nil {
 		return nil, false, nil
 	}
-	out, err := exec.CommandContext(ctx, path, args...).Output()
+	out, err = runClipboardToolPathLimited(ctx, path, args, clipboardImageTransportLimit)
 	if err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
@@ -144,11 +160,12 @@ func (e *clipboardToolExitError) Unwrap() error { return e.err }
 // an explicit application gesture.
 //
 // It returns ErrNoClipboardImage when a clipboard was reached but holds no image, a
-// route error when this host has no way to read a clipboard image at all, and a
-// bounded ClipboardImage on success. Like the text reader it refuses to touch the
-// clipboard across SSH: that clipboard belongs to the machine the user is sitting
-// at, and a paste from a remote session that silently read the wrong one would be
-// worse than no paste.
+// route error when this host has no way to read a clipboard image at all, an error naming
+// the limit when the clipboard does hold an image that is too large to return (never a
+// truncated payload), and a bounded ClipboardImage on success. Like the text reader it
+// refuses to touch the clipboard across SSH: that clipboard belongs to the machine the
+// user is sitting at, and a paste from a remote session that silently read the wrong one
+// would be worse than no paste.
 func ReadClipboardImageSync() (ClipboardImage, ClipboardPath, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), clipboardImageTimeout)
 	defer cancel()
@@ -207,7 +224,7 @@ func parseWindowsClipboardImage(out []byte) (ClipboardImage, error) {
 	// Bound the transport before decoding: base64 is 4/3 of the decoded size, so a
 	// bounded input is what keeps the decode itself bounded.
 	if len(payload) > base64.StdEncoding.EncodedLen(maxClipboardImageBytes)+4 {
-		return ClipboardImage{}, fmt.Errorf("clipboard image exceeds the %d byte limit", maxClipboardImageBytes)
+		return ClipboardImage{}, fmt.Errorf("%w (%d bytes)", errClipboardImageTooLarge, maxClipboardImageBytes)
 	}
 	data, err := base64.StdEncoding.DecodeString(payload)
 	if err != nil {
@@ -233,6 +250,11 @@ func readClipboardImageLinux(ctx context.Context) (ClipboardImage, ClipboardPath
 		}
 		image, parseErr := newClipboardImage(out, "")
 		if parseErr != nil {
+			if errors.Is(parseErr, errClipboardImageTooLarge) {
+				// An image over the limit is not an empty clipboard: the caller must report
+				// the refusal instead of falling back to a text paste of nothing.
+				return ClipboardImage{}, ClipboardNative, fmt.Errorf("%s: %w", candidate.name, parseErr)
+			}
 			failures = append(failures, candidate.name+": "+parseErr.Error())
 			continue
 		}
@@ -246,6 +268,8 @@ func readClipboardImageLinux(ctx context.Context) (ClipboardImage, ClipboardPath
 		if err == nil {
 			if image, parseErr := parseWindowsClipboardImage(out); parseErr == nil {
 				return image, ClipboardNative, nil
+			} else if errors.Is(parseErr, errClipboardImageTooLarge) {
+				return ClipboardImage{}, ClipboardNative, parseErr
 			} else {
 				failures = append(failures, "powershell.exe: "+parseErr.Error())
 			}
@@ -275,7 +299,9 @@ func newClipboardImage(data []byte, hint string) (ClipboardImage, error) {
 		return ClipboardImage{}, ErrNoClipboardImage
 	}
 	if len(data) > maxClipboardImageBytes {
-		return ClipboardImage{}, fmt.Errorf("clipboard image is %d bytes, over the %d byte limit", len(data), maxClipboardImageBytes)
+		// The observed length is not named: a transport cap makes it a truncated read, so
+		// it would be a lower bound masquerading as the image's size.
+		return ClipboardImage{}, fmt.Errorf("%w (%d bytes)", errClipboardImageTooLarge, maxClipboardImageBytes)
 	}
 	mime := sniffClipboardImageMIME(data)
 	if mime == "" {

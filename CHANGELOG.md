@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- clipboard reads are now capped **while the helper runs**: `runClipboardToolOutputLimited` stops storing a helper's stdout at the read limit instead of buffering it to EOF with `Output()` and comparing lengths afterwards, so the 8 MiB bound the text and image readers document is a real bound on memory rather than only on the value returned. A helper that keeps printing is stopped by the closed read end (SIGPIPE) or by the read deadline, and the existing "exceeds read limit" report is unchanged;
+- an image that is too large is no longer reported as an empty clipboard: `errClipboardImageTooLarge` separates "the clipboard holds an image over the 8 MiB limit" from `ErrNoClipboardImage`, so a large screenshot is reported as the refusal it is instead of making the caller fall back to a text paste of nothing. The refusal names the limit and the tool, never a truncated length as if it were the image's size;
+- `scripts/check-version.sh` now also fails when the documents disagree about the latest published version. `v0.1.33` bumped `docs/PORT_STATUS.md:7` and left the release-boundary line naming `v0.1.32`, which is the second time this drift shipped; `docs/RELEASE.md`'s tag examples are now `vX.Y.Z` placeholders so the checklist cannot model reusing a published tag.
+
 ## v0.1.33 — clipboard images for terminal applications
 
 - `ReadClipboardImageSync` reads an IMAGE from the locally reachable clipboard after an explicit application gesture, so a screenshot can be pasted into a terminal application instead of being lost: no terminal protocol carries image data, and the text reader could only ever see the empty string a text clipboard returns for one. It returns the new `ClipboardImage{Data, MIME, Name}` — the encoded bytes, the media type derived from the bytes rather than from the route, and an optional operator-facing file-name hint taken from the clipboard's own file list;
