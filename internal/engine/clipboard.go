@@ -51,7 +51,7 @@ var nativeClipboardReaders = []struct {
 	{"wl-paste", []string{"--no-newline"}},
 	{"xclip", []string{"-selection", "clipboard", "-o"}},
 	{"xsel", []string{"--clipboard", "--output"}},
-	{"powershell.exe", []string{"-NoProfile", "-NonInteractive", "-Command", "$ErrorActionPreference='Stop'; [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); Get-Clipboard -Raw"}},
+	{"powershell.exe", []string{"-NoProfile", "-NonInteractive", "-Command", "$ErrorActionPreference='Stop'; [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); [Console]::Write([string](Get-Clipboard -Raw))"}},
 }
 
 // errNoNativeClipboard is the report for a linux session where none of the candidate

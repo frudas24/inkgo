@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.1.35 — exact clipboard text from PowerShell
+
+- Windows and WSL clipboard reads now write raw text with `Console.Write`, avoiding the CRLF PowerShell appends to pipeline output. Intentional trailing newlines are preserved.
+- Regression executes the real PowerShell helper with an isolated clipboard-source stub; no user clipboard is changed.
+
 ## v0.1.34 — bounded clipboard reads and honest size refusals
 
 - clipboard reads are now capped **while the helper runs**: `runClipboardToolOutputLimited` stops storing a helper's stdout at the read limit instead of buffering it to EOF with `Output()` and comparing lengths afterwards, so the 8 MiB bound the text and image readers document is a real bound on memory rather than only on the value returned. A helper that keeps printing is stopped by the closed read end (SIGPIPE) or by the read deadline, and the existing "exceeds read limit" report is unchanged;
